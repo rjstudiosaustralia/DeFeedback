@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0 — 2026-08-30
+
+- Renamed the engine control to `START ENGINE` / `STOP ENGINE`.
+- Renamed and clarified the independent master output safety mute.
+- Added green processing, yellow bypass, red mute/error, and neutral stopped lane treatments.
+- Added explicit per-lane state text for engine stop, plugin mute, master mute, and bypass.
+- Rebuilt the lane headings and controls on one shared layout geometry.
+- Widened the Strength fader and increased the minimum live window width.
+- Added an isolated no-audio UI preview build for safe visual QA beside a running Release instance.
+
 ## 0.2.0 — 2026-08-30
 
 - Restore the main window and each open De-Feedback editor to its saved layout.

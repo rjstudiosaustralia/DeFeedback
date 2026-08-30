@@ -9,7 +9,7 @@ It is deliberately not a general-purpose DAW. The operator selects one Core Audi
 
 ## Current status
 
-Version `0.2.0` is a working engineering preview:
+Version `0.3.0` is a working engineering preview:
 
 - arm64-only macOS application;
 - AUv2 hosting for De-Feedback 1.1.4 (`aufx/FbTI/jDSP`);
@@ -21,6 +21,8 @@ Version `0.2.0` is a working engineering preview:
 - restored main-window and open plugin-editor layouts;
 - inline De-Feedback Strength and plugin Mute controls;
 - separate raw-input and post-gate output meters;
+- aligned signal-flow columns with a wider Strength fader;
+- lane state colors: green processing, yellow bypass, red mute/error, gray stopped;
 - 48 kHz default and device-supported buffer selection;
 - manual Core Audio device refresh for interfaces connected after launch;
 - CPU, device latency, peak level, and XRun display;
@@ -43,9 +45,9 @@ The requested failure policy is dry pass. Therefore, a lane routes input directl
 
 The rack displays an amber full-width warning whenever dry pass is active because feedback protection is then off.
 
-`STOP AUDIO` removes the Core Audio callback: plugins stop processing, meters stop, CPU load drops, and outputs are silent. `MUTE EVERYTHING` leaves Core Audio and every plugin running but zeros samples at the final lane gates. Input meters and processing continue while the post-gate output meters fall to zero, allowing a safe CPU/XRun load test before a show.
+`STOP ENGINE` removes the Core Audio callback: every plugin and meter stops processing, CPU load drops, and outputs are silent. `MUTE ALL OUTPUTS` leaves Core Audio and every plugin running but zeros samples at the final lane gates. Input meters and processing continue while the post-gate output meters fall to zero, allowing a safe CPU/XRun load test before a show.
 
-The per-lane `MUTE` control is De-Feedback's own parameter and is saved inside that AU instance. `BYPASS` skips the plugin and passes dry audio. These are intentionally separate from the global output mute.
+The per-lane `PLUGIN MUTE` checkbox is De-Feedback's own parameter and is saved inside that AU instance. `BYPASS` skips the plugin and passes dry audio. The master output mute intentionally does not alter those plugin checkboxes; instead every lane turns red and reports `OUTPUT MUTED`, preserving each plugin's state for immediate unmute.
 
 A hard in-process AUv2 crash can still terminate the host before it can choose a fallback. True crash isolation requires a different plugin format or a multi-process bridge and is not claimed in this release.
 

@@ -9,6 +9,7 @@
 namespace defeedback
 {
 class LaneRow;
+class LaneHeader;
 
 class MainComponent final : public juce::Component,
                             private juce::Timer,
@@ -45,16 +46,18 @@ private:
     juce::Label deviceLabel;
     juce::Label rateLabel;
     juce::Label bufferLabel;
+    juce::Label engineLabel;
+    juce::Label outputSafetyLabel;
     juce::Label metricsLabel;
     juce::Label pluginLabel;
     juce::Label alertLabel;
-    juce::Label laneHeaderLabel;
+    juce::Label routingHintLabel;
 
     juce::ComboBox deviceCombo;
     juce::ComboBox rateCombo;
     juce::ComboBox bufferCombo;
-    juce::TextButton startStopButton { "START AUDIO" };
-    juce::TextButton emergencyButton { "MUTE EVERYTHING" };
+    juce::TextButton startStopButton { "START ENGINE" };
+    juce::TextButton emergencyButton { "MUTE ALL OUTPUTS" };
     juce::TextButton refreshDevicesButton { "REFRESH" };
     juce::TextButton resetXRunsButton { "RESET XRUNS" };
     juce::TextButton addLaneButton { "+ ADD LANE" };
@@ -63,6 +66,7 @@ private:
 
     juce::Viewport laneViewport;
     juce::Component laneContainer;
+    std::unique_ptr<LaneHeader> laneHeader;
     juce::OwnedArray<LaneRow> laneRows;
     juce::Array<DeviceChoice> deviceChoices;
     juce::Array<double> sampleRates;
@@ -70,6 +74,9 @@ private:
 
     bool refreshingControls = false;
     bool safeLaunch = false;
+   #if DEFEEDBACK_UI_PREVIEW
+    bool previewEngineRunning = true;
+   #endif
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };
