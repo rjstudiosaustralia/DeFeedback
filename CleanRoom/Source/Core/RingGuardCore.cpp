@@ -66,6 +66,7 @@ void RealtimeProcessor::NotchSlot::prepare (double newSampleRate) noexcept
 {
     sampleRate = std::max (newSampleRate, 8000.0);
     attackStep = 1.0f - std::exp (-1.0f / static_cast<float> (0.004 * sampleRate));
+    retuneStep = 1.0f - std::exp (-1.0f / static_cast<float> (0.012 * sampleRate));
     releaseStep = 1.0f - std::exp (-1.0f / static_cast<float> (0.650 * sampleRate));
     reset();
 }
@@ -96,6 +97,28 @@ void RealtimeProcessor::NotchSlot::assign (float newFrequencyHz,
                                             int holdFrames) noexcept
 {
     const auto safeDepth = std::clamp (depth, 0.0f, 0.985f);
+    const auto frequenciesMatch = [] (float first, float second) noexcept
+    {
+        if (first <= 0.0f || second <= 0.0f) return false;
+        return std::max (first, second) / std::min (first, second) < 1.055f;
+    };
+
+    if (retunePending)
+    {
+        if (frequenciesMatch (pendingFrequencyHz, newFrequencyHz))
+        {
+            pendingFrequencyHz = newFrequencyHz;
+            pendingDepth = std::max (pendingDepth, safeDepth);
+            refreshedThisFrame = true;
+            holdFramesRemaining = std::max (holdFramesRemaining, holdFrames);
+            score = std::max (score * 0.92f, newScore);
+        }
+
+        // Once a stronger candidate has displaced this slot, do not let the old
+        // ringing frequency cancel the fade-and-retune transition.
+        return;
+    }
+
     refreshedThisFrame = true;
     holdFramesRemaining = std::max (holdFramesRemaining, holdFrames);
     score = std::max (score * 0.92f, newScore);
@@ -133,7 +156,8 @@ void RealtimeProcessor::NotchSlot::beginAnalysisFrame() noexcept
 
 void RealtimeProcessor::NotchSlot::beginAudioFrame() noexcept
 {
-    const auto smoothing = targetDepth > currentDepth ? attackStep : releaseStep;
+    const auto smoothing = retunePending ? retuneStep
+                          : (targetDepth > currentDepth ? attackStep : releaseStep);
     currentDepth += smoothing * (targetDepth - currentDepth);
     if (! std::isfinite (currentDepth)) currentDepth = 0.0f;
 
@@ -160,9 +184,12 @@ float RealtimeProcessor::NotchSlot::process (int channel, float input) noexcept
 
 bool RealtimeProcessor::NotchSlot::matches (float otherFrequencyHz) const noexcept
 {
-    if (frequencyHz <= 0.0f || otherFrequencyHz <= 0.0f) return false;
-    const auto ratio = std::max (frequencyHz, otherFrequencyHz) / std::min (frequencyHz, otherFrequencyHz);
-    return ratio < 1.055f;
+    const auto closeTo = [otherFrequencyHz] (float reference) noexcept
+    {
+        if (reference <= 0.0f || otherFrequencyHz <= 0.0f) return false;
+        return std::max (reference, otherFrequencyHz) / std::min (reference, otherFrequencyHz) < 1.055f;
+    };
+    return closeTo (frequencyHz) || (retunePending && closeTo (pendingFrequencyHz));
 }
 
 bool RealtimeProcessor::NotchSlot::isAvailable() const noexcept
@@ -180,7 +207,7 @@ void RealtimeProcessor::prepare (double newSampleRate,
                                  int channelCount) noexcept
 {
     sampleRateHz = std::clamp (newSampleRate, 8000.0, 192000.0);
-    maxBlockSize = maximumBlockSize;
+    static_cast<void> (maximumBlockSize);
     preparedChannels = std::clamp (channelCount, 1, maximumChannels);
     analysisHopSamples = std::max (64, static_cast<int> (std::lround (sampleRateHz * 0.004)));
     probeFrequencyRatio = std::pow (maximumProbeFrequencyHz / minimumProbeFrequencyHz,
