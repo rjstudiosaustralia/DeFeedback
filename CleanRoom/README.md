@@ -14,12 +14,13 @@ The current milestone is a **working deterministic baseline**, not an AI-equival
 - No allocation, locking, logging, model compilation, file access, or UI work in `process()`.
 - Dry bypass, hard mute, strength, sensitivity, and maximum-notch parameters.
 - Unit tests and a non-gating benchmark executable.
+- Ad-hoc-signed private engineering packages from macOS CI.
 
 ## What is not implemented yet
 
 - The causal learned vocal-isolation/dereverberation/noise-removal stage.
 - A reference-assisted acoustic echo/feedback canceller sidechain.
-- A production user interface, presets, signing, notarization, or installer.
+- A production user interface, presets, Developer ID signing, notarization, or installer.
 - A claim of commercial-grade feedback protection or parity with any other product.
 
 The deterministic baseline may notch a sustained vocal harmonic and should be treated as an engineering prototype. Do not rely on it as the only protection for loudspeakers, hearing, performers, or audiences.
@@ -44,6 +45,12 @@ cmake --build build --target RingGuardCoreTests
 cmake --build build --target RingGuardBenchmark
 ```
 
+On macOS, create the private ad-hoc-signed AU/VST3/standalone bundle archive with:
+
+```bash
+sh CleanRoom/scripts/package-adhoc.sh Release build
+```
+
 The host-reported plug-in delay is zero samples. End-to-end latency still includes the console, network, interface, Core Audio driver, and host buffers.
 
 ## Research direction
@@ -54,6 +61,7 @@ See:
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Research notes](docs/RESEARCH_NOTES.md)
+- [Open-source model survey](docs/OPEN_SOURCE_SURVEY.md)
 - [Measurement plan](docs/MEASUREMENT_PLAN.md)
 - [Dataset and training policy](docs/DATASET_AND_TRAINING.md)
 - [Apple silicon backends](docs/APPLE_SILICON_BACKENDS.md)
