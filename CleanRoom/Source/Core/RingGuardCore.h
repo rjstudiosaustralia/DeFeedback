@@ -85,7 +85,7 @@ private:
         double sampleRate = 48000.0;
         float frequencyHz = 0.0f, pendingFrequencyHz = 0.0f;
         float currentDepth = 0.0f, targetDepth = 0.0f, pendingDepth = 0.0f;
-        float score = 0.0f, attackStep = 1.0f, releaseStep = 1.0f;
+        float score = 0.0f, attackStep = 1.0f, retuneStep = 1.0f, releaseStep = 1.0f;
         int holdFramesRemaining = 0;
         bool refreshedThisFrame = false, retunePending = false;
     };
@@ -103,7 +103,6 @@ private:
     std::array<NotchSlot, maximumNotches> notchSlots;
     Settings settings;
     double sampleRateHz = 48000.0;
-    std::size_t maxBlockSize = 0;
     int preparedChannels = 1, analysisHopSamples = 96, samplesIntoAnalysisFrame = 0;
     float broadbandEnergy = 0.0f, probeFrequencyRatio = 1.0f;
     std::uint64_t analysedFrames = 0;
