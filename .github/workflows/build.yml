@@ -22,14 +22,34 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
-      - name: Verify Apple Silicon binary
+      - name: Verify host Apple Silicon binary
         run: lipo -archs "build/DeFeedbackLive_artefacts/Release/DeFeedback Live.app/Contents/MacOS/DeFeedback Live" | grep -qx arm64
 
-      - name: Package ad-hoc-signed engineering build
+      - name: Verify RingGuard Apple Silicon binaries
+        run: |
+          for binary in \
+            "build/CleanRoom/RingGuardPrototype_artefacts/Release/AU/RingGuard Prototype.component/Contents/MacOS/RingGuard Prototype" \
+            "build/CleanRoom/RingGuardPrototype_artefacts/Release/VST3/RingGuard Prototype.vst3/Contents/MacOS/RingGuard Prototype" \
+            "build/CleanRoom/RingGuardPrototype_artefacts/Release/Standalone/RingGuard Prototype.app/Contents/MacOS/RingGuard Prototype"
+          do
+            test -f "${binary}"
+            lipo -archs "${binary}" | grep -qx arm64
+          done
+
+      - name: Package DeFeedback Live engineering build
         run: ./scripts/package-adhoc.sh Release build
+
+      - name: Package RingGuard engineering build
+        run: sh ./CleanRoom/scripts/package-adhoc.sh Release build
 
       - uses: actions/upload-artifact@v4
         with:
           name: DeFeedback-Live-adhoc-arm64
           path: dist/DeFeedback-Live-0.3.0-adhoc-arm64.zip
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RingGuard-Prototype-adhoc-arm64
+          path: dist/RingGuard-Prototype-0.1.0-adhoc-arm64.zip
           if-no-files-found: error
