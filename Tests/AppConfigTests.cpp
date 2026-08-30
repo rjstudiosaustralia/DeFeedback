@@ -25,14 +25,16 @@ int main()
     original.outputDeviceName = "RME Digiface Dante";
     original.sampleRate = 48000.0;
     original.bufferSize = 32;
+    original.mainWindowState = "1080 720 40 60";
     original.lanes.clear();
-    original.lanes.add ({ 1, "Lead", 7, 11, false, "YWJj" });
-    original.lanes.add ({ 2, "MC", 3, 5, true, {} });
+    original.lanes.add ({ 1, "Lead", 7, 11, false, "YWJj", true, "420 560 80 90" });
+    original.lanes.add ({ 2, "MC", 3, 5, true, {}, false, {} });
 
     auto restored = AppConfig::fromXml (*original.toXml());
     expect (restored.inputDeviceName == original.inputDeviceName, "input device round-trip");
     expect (restored.outputDeviceName == original.outputDeviceName, "output device round-trip");
     expect (restored.bufferSize == 32, "buffer round-trip");
+    expect (restored.mainWindowState == original.mainWindowState, "main window state round-trip");
     expect (restored.lanes == original.lanes, "lane configuration round-trip");
 
     const auto latency = estimateRoundTripMilliseconds (48000.0, 64, 32, 32);
@@ -48,6 +50,16 @@ int main()
 
     juce::XmlElement empty ("DEFEEDBACK_LIVE_CONFIG");
     expect (AppConfig::fromXml (empty).lanes.size() == 1, "empty config restores one safe lane");
+
+    juce::Array<LaneConfig> exclusiveRoutes;
+    exclusiveRoutes.add ({ 1, "One", 0, 0, false, {}, false, {} });
+    exclusiveRoutes.add ({ 2, "Two", 1, 1, false, {}, false, {} });
+    expect (validateExclusiveRoutes (exclusiveRoutes).isEmpty(), "unique routes are accepted");
+    exclusiveRoutes.getReference (1).inputChannel = 0;
+    expect (validateExclusiveRoutes (exclusiveRoutes).startsWith ("Input"), "duplicate input is rejected");
+    exclusiveRoutes.getReference (1).inputChannel = 1;
+    exclusiveRoutes.getReference (1).outputChannel = 0;
+    expect (validateExclusiveRoutes (exclusiveRoutes).startsWith ("Output"), "duplicate output is rejected");
 
     if (failures == 0)
         std::cout << "All DeFeedback configuration tests passed.\n";

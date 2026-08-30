@@ -2,6 +2,8 @@
 
 #include "PluginRegistration.h"
 
+#include <set>
+
 namespace defeedback
 {
 namespace
@@ -59,6 +61,7 @@ juce::String AudioEngine::initialise (const AppConfig& config)
     if (error.isNotEmpty())
         return "Audio device: " + error;
 
+    xRunBaseline = deviceManager.getXRunCount();
     return rebuildGraph();
 }
 
@@ -106,6 +109,7 @@ void AudioEngine::setEmergencyMuted (bool shouldMute)
 juce::String AudioEngine::setLanes (const juce::Array<LaneConfig>& newLanes)
 {
     updateSavedPluginStates();
+    capturePluginWindowStates();
     auto updated = newLanes;
 
     // Routing edits originate in the UI, while the freshest opaque AU state lives
@@ -118,6 +122,8 @@ juce::String AudioEngine::setLanes (const juce::Array<LaneConfig>& newLanes)
             if (lane.id == current.id)
             {
                 lane.pluginStateBase64 = current.pluginStateBase64;
+                lane.editorOpen = current.editorOpen;
+                lane.editorWindowState = current.editorWindowState;
                 break;
             }
         }
@@ -129,7 +135,7 @@ juce::String AudioEngine::setLanes (const juce::Array<LaneConfig>& newLanes)
         lanes.removeLast();
 
     if (lanes.isEmpty())
-        lanes.add ({ 1, "Vocal 1", 0, 0, false, {} });
+        lanes.add ({ 1, "Vocal 1", 0, 0, false, {}, false, {} });
 
     return rebuildGraph();
 }
@@ -137,6 +143,7 @@ juce::String AudioEngine::setLanes (const juce::Array<LaneConfig>& newLanes)
 juce::Array<LaneConfig> AudioEngine::captureLanesWithPluginState()
 {
     updateSavedPluginStates();
+    capturePluginWindowStates();
     return lanes;
 }
 
@@ -196,6 +203,14 @@ juce::StringArray AudioEngine::getOutputChannelNames() const
     return {};
 }
 
+void AudioEngine::refreshDeviceList()
+{
+    for (auto* type : deviceManager.getAvailableDeviceTypes())
+        type->scanForDevices();
+
+    sendChangeMessage();
+}
+
 juce::String AudioEngine::selectDevice (const DeviceChoice& choice)
 {
     auto setup = deviceManager.getAudioDeviceSetup();
@@ -210,6 +225,7 @@ juce::String AudioEngine::selectDevice (const DeviceChoice& choice)
     if (error.isNotEmpty())
         return error;
 
+    resetXRunCount();
     error = rebuildGraph();
     sendChangeMessage();
     return error;
@@ -227,6 +243,7 @@ juce::String AudioEngine::setSampleRate (double rate)
     if (error.isNotEmpty())
         return error;
 
+    resetXRunCount();
     error = rebuildGraph();
     sendChangeMessage();
     return error;
@@ -244,6 +261,7 @@ juce::String AudioEngine::setBufferSize (int size)
     if (error.isNotEmpty())
         return error;
 
+    resetXRunCount();
     error = rebuildGraph();
     sendChangeMessage();
     return error;
@@ -288,6 +306,17 @@ double AudioEngine::getEstimatedRoundTripMilliseconds() const
     return 0.0;
 }
 
+int AudioEngine::getXRunCount() const noexcept
+{
+    return juce::jmax (0, deviceManager.getXRunCount() - xRunBaseline);
+}
+
+void AudioEngine::resetXRunCount()
+{
+    xRunBaseline = deviceManager.getXRunCount();
+    sendChangeMessage();
+}
+
 juce::Array<LaneStatus> AudioEngine::getLaneStatuses()
 {
     juce::Array<LaneStatus> result;
@@ -298,7 +327,14 @@ juce::Array<LaneStatus> AudioEngine::getLaneStatuses()
         status.text = runtime.status;
         status.isDryFallback = runtime.dryFallback;
         status.editorAvailable = runtime.pluginNode != nullptr;
-        status.peak = runtime.meter != nullptr ? runtime.meter->consumePeak() : 0.0f;
+        status.strengthAvailable = runtime.strengthParameter != nullptr;
+        status.pluginMuteAvailable = runtime.muteParameter != nullptr;
+        status.pluginMuted = runtime.muteParameter != nullptr && runtime.muteParameter->getValue() >= 0.5f;
+        status.strengthNormalized = runtime.strengthParameter != nullptr
+                                  ? runtime.strengthParameter->getValue()
+                                  : 1.0f;
+        status.inputPeak = runtime.inputMeter != nullptr ? runtime.inputMeter->consumePeak() : 0.0f;
+        status.outputPeak = runtime.outputMeter != nullptr ? runtime.outputMeter->consumePeak() : 0.0f;
         result.add (std::move (status));
     }
 
@@ -324,7 +360,59 @@ void AudioEngine::openPluginEditor (int laneIndex)
         }
     }
 
-    pluginWindows.add (new PluginWindow (node, pluginWindows, laneIndex + 1));
+    auto& lane = lanes.getReference (laneIndex);
+    lane.editorOpen = true;
+    pluginWindows.add (new PluginWindow (
+        node,
+        pluginWindows,
+        laneIndex + 1,
+        lane.id,
+        lane.editorWindowState,
+        [this] (int laneId, const juce::String& windowState)
+        {
+            for (auto& item : lanes)
+            {
+                if (item.id == laneId)
+                {
+                    item.editorOpen = false;
+                    item.editorWindowState = windowState;
+                    break;
+                }
+            }
+
+            sendChangeMessage();
+        }));
+}
+
+void AudioEngine::restorePluginWindows()
+{
+    reopenSavedPluginWindows();
+}
+
+void AudioEngine::setLaneStrength (int laneIndex, float normalizedValue)
+{
+    if (! juce::isPositiveAndBelow (laneIndex, static_cast<int> (laneRuntimes.size())))
+        return;
+
+    if (auto* parameter = laneRuntimes[static_cast<size_t> (laneIndex)].strengthParameter)
+    {
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, normalizedValue));
+        parameter->endChangeGesture();
+    }
+}
+
+void AudioEngine::setLanePluginMuted (int laneIndex, bool shouldMute)
+{
+    if (! juce::isPositiveAndBelow (laneIndex, static_cast<int> (laneRuntimes.size())))
+        return;
+
+    if (auto* parameter = laneRuntimes[static_cast<size_t> (laneIndex)].muteParameter)
+    {
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost (shouldMute ? 1.0f : 0.0f);
+        parameter->endChangeGesture();
+    }
 }
 
 void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster*)
@@ -409,6 +497,8 @@ juce::String AudioEngine::rebuildGraph()
         return "Could not create the Core Audio graph I/O nodes.";
 
     juce::String firstError;
+    std::set<int> usedInputs;
+    std::set<int> usedOutputs;
 
     for (int laneIndex = 0; laneIndex < lanes.size(); ++laneIndex)
     {
@@ -424,10 +514,42 @@ juce::String AudioEngine::rebuildGraph()
             continue;
         }
 
-        auto sourceNode = inputNode;
-        auto sourceChannel = lane.inputChannel;
+        const auto duplicateInput = usedInputs.contains (lane.inputChannel);
+        const auto duplicateOutput = usedOutputs.contains (lane.outputChannel);
+        if (duplicateInput || duplicateOutput)
+        {
+            runtime.status = duplicateInput ? "DUPLICATE INPUT" : "DUPLICATE OUTPUT";
+            runtime.dryFallback = true;
+            laneRuntimes.push_back (std::move (runtime));
+            if (firstError.isEmpty())
+                firstError = "Each input and output channel can be assigned to only one lane.";
+            continue;
+        }
 
-        if (! lane.dry && pluginAvailable)
+        usedInputs.insert (lane.inputChannel);
+        usedOutputs.insert (lane.outputChannel);
+
+        auto inputMeter = std::make_unique<MeterProcessor>();
+        runtime.inputMeter = inputMeter.get();
+        auto inputMeterNode = graph.addNode (std::move (inputMeter));
+
+        if (inputMeterNode == nullptr
+            || ! graph.addConnection ({ { inputNode->nodeID, lane.inputChannel },
+                                         { inputMeterNode->nodeID, 0 } }))
+        {
+            runtime.status = "INVALID INPUT";
+            runtime.dryFallback = true;
+            runtime.inputMeter = nullptr;
+            laneRuntimes.push_back (std::move (runtime));
+            if (firstError.isEmpty())
+                firstError = "One or more lane inputs could not be connected.";
+            continue;
+        }
+
+        auto sourceNode = inputMeterNode;
+        auto sourceChannel = 0;
+
+        if (pluginAvailable)
         {
             juce::String pluginError;
             auto instance = pluginFormats.createPluginInstance (pluginDescription,
@@ -445,12 +567,20 @@ juce::String AudioEngine::rebuildGraph()
                 }
 
                 runtime.pluginNode = graph.addNode (std::move (instance));
-                if (runtime.pluginNode != nullptr
-                    && graph.addConnection ({ { inputNode->nodeID, lane.inputChannel },
-                                               { runtime.pluginNode->nodeID, 0 } }))
+                bindPluginParameters (runtime);
+
+                const auto connectedToPlugin = runtime.pluginNode != nullptr
+                                            && graph.addConnection ({ { inputMeterNode->nodeID, 0 },
+                                                                       { runtime.pluginNode->nodeID, 0 } });
+
+                if (lane.dry)
+                {
+                    runtime.status = "BYPASSED — dry pass";
+                    runtime.dryFallback = true;
+                }
+                else if (connectedToPlugin)
                 {
                     sourceNode = runtime.pluginNode;
-                    sourceChannel = 0;
                     runtime.status = "PROCESSED";
                 }
                 else
@@ -468,26 +598,26 @@ juce::String AudioEngine::rebuildGraph()
         }
         else
         {
-            runtime.status = lane.dry ? "DRY — operator bypass" : "DRY — plugin unavailable";
+            runtime.status = lane.dry ? "BYPASSED — dry pass" : "DRY — plugin unavailable";
             runtime.dryFallback = true;
         }
 
-        auto meter = std::make_unique<MeterProcessor> (&emergencyMuted);
-        runtime.meter = meter.get();
-        auto meterNode = graph.addNode (std::move (meter));
+        auto outputMeter = std::make_unique<MeterProcessor> (&emergencyMuted, true);
+        runtime.outputMeter = outputMeter.get();
+        auto outputMeterNode = graph.addNode (std::move (outputMeter));
 
-        const auto connectedToMeter = meterNode != nullptr
+        const auto connectedToMeter = outputMeterNode != nullptr
                                    && graph.addConnection ({ { sourceNode->nodeID, sourceChannel },
-                                                              { meterNode->nodeID, 0 } });
+                                                              { outputMeterNode->nodeID, 0 } });
         const auto connectedToOutput = connectedToMeter
-                                    && graph.addConnection ({ { meterNode->nodeID, 0 },
+                                    && graph.addConnection ({ { outputMeterNode->nodeID, 0 },
                                                                { outputNode->nodeID, lane.outputChannel } });
 
         if (! connectedToOutput)
         {
             runtime.status = "INVALID ROUTE";
             runtime.dryFallback = true;
-            runtime.meter = nullptr;
+            runtime.outputMeter = nullptr;
             if (firstError.isEmpty())
                 firstError = "One or more lane routes could not be connected.";
         }
@@ -503,13 +633,57 @@ juce::String AudioEngine::rebuildGraph()
         deviceManager.addAudioCallback (&player);
 
     running = wasRunning;
+    reopenSavedPluginWindows();
     sendChangeMessage();
     return firstError;
 }
 
 void AudioEngine::closePluginWindows()
 {
+    capturePluginWindowStates();
     pluginWindows.clear();
+}
+
+void AudioEngine::capturePluginWindowStates()
+{
+    for (auto* window : pluginWindows)
+    {
+        for (auto& lane : lanes)
+        {
+            if (lane.id == window->getLaneId())
+            {
+                lane.editorOpen = true;
+                lane.editorWindowState = window->captureWindowState();
+                break;
+            }
+        }
+    }
+}
+
+void AudioEngine::reopenSavedPluginWindows()
+{
+    for (int laneIndex = 0; laneIndex < lanes.size(); ++laneIndex)
+    {
+        if (lanes.getReference (laneIndex).editorOpen)
+            openPluginEditor (laneIndex);
+    }
+}
+
+void AudioEngine::bindPluginParameters (LaneRuntime& runtime)
+{
+    if (runtime.pluginNode == nullptr)
+        return;
+
+    for (auto* parameter : runtime.pluginNode->getProcessor()->getParameters())
+    {
+        const auto name = parameter->getName (128).trim();
+
+        if (runtime.strengthParameter == nullptr && name.containsIgnoreCase ("strength"))
+            runtime.strengthParameter = parameter;
+
+        if (runtime.muteParameter == nullptr && name.containsIgnoreCase ("mute"))
+            runtime.muteParameter = parameter;
+    }
 }
 
 void AudioEngine::updateSavedPluginStates()

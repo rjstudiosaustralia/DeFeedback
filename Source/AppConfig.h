@@ -14,6 +14,8 @@ struct LaneConfig
     int outputChannel = 0;
     bool dry = false;
     juce::String pluginStateBase64;
+    bool editorOpen = false;
+    juce::String editorWindowState;
 
     bool operator== (const LaneConfig&) const = default;
 };
@@ -26,6 +28,7 @@ struct AppConfig
     int bufferSize = 64;
     bool autoStart = true;
     bool launchAtLogin = true;
+    juce::String mainWindowState;
     juce::Array<LaneConfig> lanes;
 
     AppConfig();
@@ -33,6 +36,8 @@ struct AppConfig
     std::unique_ptr<juce::XmlElement> toXml() const;
     static AppConfig fromXml (const juce::XmlElement&);
 };
+
+juce::String validateExclusiveRoutes (const juce::Array<LaneConfig>&);
 
 double estimateRoundTripMilliseconds (double sampleRate,
                                       int bufferSize,

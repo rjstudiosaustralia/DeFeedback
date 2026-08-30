@@ -9,16 +9,22 @@ It is deliberately not a general-purpose DAW. The operator selects one Core Audi
 
 ## Current status
 
-Version `0.1.0` is a working engineering preview:
+Version `0.2.0` is a working engineering preview:
 
 - arm64-only macOS application;
 - AUv2 hosting for De-Feedback 1.1.4 (`aufx/FbTI/jDSP`);
 - one Core Audio input/output pair at a time;
 - up to ten independent mono lanes;
 - arbitrary input-to-output routing;
+- exclusive routing that prevents an input or output channel being used by two lanes;
 - separate plugin editor windows;
+- restored main-window and open plugin-editor layouts;
+- inline De-Feedback Strength and plugin Mute controls;
+- separate raw-input and post-gate output meters;
 - 48 kHz default and device-supported buffer selection;
+- manual Core Audio device refresh for interfaces connected after launch;
 - CPU, device latency, peak level, and XRun display;
+- resettable session XRun count;
 - per-lane operator-selected dry pass;
 - automatic dry pass when a plugin instance cannot load;
 - a real-time global output mute after processing;
@@ -31,13 +37,15 @@ The app has been compiled and exercised on an M1 Max with the installed De-Feedb
 
 The requested failure policy is dry pass. Therefore, a lane routes input directly to output when:
 
-- the operator enables `DRY PASS`;
+- the operator enables `BYPASS`;
 - De-Feedback is missing or cannot instantiate; or
 - the selected route cannot host the plugin.
 
 The rack displays an amber full-width warning whenever dry pass is active because feedback protection is then off.
 
-`MUTE EVERYTHING` is implemented after each plugin instance. The plugins continue processing while the physical outputs are silent, allowing a safe CPU/XRun load test before a show.
+`STOP AUDIO` removes the Core Audio callback: plugins stop processing, meters stop, CPU load drops, and outputs are silent. `MUTE EVERYTHING` leaves Core Audio and every plugin running but zeros samples at the final lane gates. Input meters and processing continue while the post-gate output meters fall to zero, allowing a safe CPU/XRun load test before a show.
+
+The per-lane `MUTE` control is De-Feedback's own parameter and is saved inside that AU instance. `BYPASS` skips the plugin and passes dry audio. These are intentionally separate from the global output mute.
 
 A hard in-process AUv2 crash can still terminate the host before it can choose a fallback. True crash isolation requires a different plugin format or a multi-process bridge and is not claimed in this release.
 

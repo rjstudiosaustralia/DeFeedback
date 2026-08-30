@@ -22,7 +22,12 @@ struct LaneStatus
     juce::String text;
     bool isDryFallback = false;
     bool editorAvailable = false;
-    float peak = 0.0f;
+    bool strengthAvailable = false;
+    bool pluginMuteAvailable = false;
+    bool pluginMuted = false;
+    float strengthNormalized = 1.0f;
+    float inputPeak = 0.0f;
+    float outputPeak = 0.0f;
 };
 
 class AudioEngine final : public juce::ChangeBroadcaster,
@@ -49,6 +54,7 @@ public:
     juce::Array<int> getAvailableBufferSizes() const;
     juce::StringArray getInputChannelNames() const;
     juce::StringArray getOutputChannelNames() const;
+    void refreshDeviceList();
 
     juce::String selectDevice (const DeviceChoice&);
     juce::String setSampleRate (double);
@@ -59,18 +65,25 @@ public:
     int getCurrentBufferSize() const;
     double getEstimatedRoundTripMilliseconds() const;
     double getCpuUsage() const { return deviceManager.getCpuUsage(); }
-    int getXRunCount() const noexcept { return deviceManager.getXRunCount(); }
+    int getXRunCount() const noexcept;
+    void resetXRunCount();
 
     bool isPluginAvailable() const noexcept { return pluginAvailable; }
     juce::String getPluginDiagnostic() const { return pluginDiagnostic; }
     juce::Array<LaneStatus> getLaneStatuses();
     void openPluginEditor (int laneIndex);
+    void restorePluginWindows();
+    void setLaneStrength (int laneIndex, float normalizedValue);
+    void setLanePluginMuted (int laneIndex, bool shouldMute);
 
 private:
     struct LaneRuntime
     {
         juce::AudioProcessorGraph::Node::Ptr pluginNode;
-        MeterProcessor* meter = nullptr;
+        MeterProcessor* inputMeter = nullptr;
+        MeterProcessor* outputMeter = nullptr;
+        juce::AudioProcessorParameter* strengthParameter = nullptr;
+        juce::AudioProcessorParameter* muteParameter = nullptr;
         juce::String status;
         bool dryFallback = false;
     };
@@ -80,6 +93,9 @@ private:
     void locatePlugin();
     juce::String rebuildGraph();
     void closePluginWindows();
+    void capturePluginWindowStates();
+    void reopenSavedPluginWindows();
+    void bindPluginParameters (LaneRuntime&);
     void updateSavedPluginStates();
     int getActiveInputSpan() const;
     int getActiveOutputSpan() const;
@@ -98,6 +114,7 @@ private:
     std::atomic<bool> emergencyMuted { false };
     bool pluginAvailable = false;
     bool suppressDeviceNotifications = false;
+    int xRunBaseline = 0;
     juce::String pluginDiagnostic;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioEngine)

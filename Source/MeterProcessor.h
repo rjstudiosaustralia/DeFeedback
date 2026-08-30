@@ -7,7 +7,8 @@ namespace defeedback
 class MeterProcessor final : public juce::AudioProcessor
 {
 public:
-    explicit MeterProcessor (std::atomic<bool>* outputMute = nullptr);
+    explicit MeterProcessor (std::atomic<bool>* outputMute = nullptr,
+                             bool measureAfterMute = false);
 
     const juce::String getName() const override { return "Lane Meter"; }
     void prepareToPlay (double, int) override {}
@@ -37,5 +38,6 @@ private:
 
     std::atomic<float> peak { 0.0f };
     std::atomic<bool>* outputMute = nullptr;
+    bool measureAfterGate = false;
 };
 }

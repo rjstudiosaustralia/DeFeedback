@@ -20,6 +20,9 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    juce::String getSavedMainWindowState() const { return config.mainWindowState; }
+    void storeMainWindowState (const juce::String&);
+    void restorePluginWindows() { engine.restorePluginWindows(); }
 
 private:
     void timerCallback() override;
@@ -52,6 +55,8 @@ private:
     juce::ComboBox bufferCombo;
     juce::TextButton startStopButton { "START AUDIO" };
     juce::TextButton emergencyButton { "MUTE EVERYTHING" };
+    juce::TextButton refreshDevicesButton { "REFRESH" };
+    juce::TextButton resetXRunsButton { "RESET XRUNS" };
     juce::TextButton addLaneButton { "+ ADD LANE" };
     juce::ToggleButton autoStartToggle { "Auto-start audio" };
     juce::ToggleButton launchAtLoginToggle { "Launch at login" };

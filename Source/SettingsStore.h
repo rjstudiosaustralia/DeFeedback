@@ -15,5 +15,6 @@ public:
 
 private:
     juce::File settingsFile;
+    juce::File legacySettingsFile;
 };
 }

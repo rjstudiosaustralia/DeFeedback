@@ -4,15 +4,24 @@ namespace defeedback
 {
 SettingsStore::SettingsStore()
 {
-    settingsFile = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+    const auto library = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
+    settingsFile = library
+                       .getChildFile ("Application Support")
                        .getChildFile ("RJ Studios Australia")
                        .getChildFile ("DeFeedback Live")
                        .getChildFile ("settings.xml");
+    legacySettingsFile = library
+                             .getChildFile ("RJ Studios Australia")
+                             .getChildFile ("DeFeedback Live")
+                             .getChildFile ("settings.xml");
 }
 
 AppConfig SettingsStore::load() const
 {
     if (auto xml = juce::XmlDocument::parse (settingsFile))
+        return AppConfig::fromXml (*xml);
+
+    if (auto xml = juce::XmlDocument::parse (legacySettingsFile))
         return AppConfig::fromXml (*xml);
 
     return {};

@@ -31,5 +31,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: DeFeedback-Live-adhoc-arm64
-          path: dist/DeFeedback-Live-0.1.0-adhoc-arm64.zip
+          path: dist/DeFeedback-Live-0.2.0-adhoc-arm64.zip
           if-no-files-found: error

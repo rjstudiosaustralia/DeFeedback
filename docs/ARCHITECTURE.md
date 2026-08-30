@@ -11,12 +11,14 @@ Each mono lane is built as:
 ```text
 Core Audio input N
         │
-        ├─ De-Feedback AU ─ meter ─ atomic output gate ─ Core Audio output M
+     input meter
         │
-        └─ dry fallback ─── meter ─ atomic output gate ─ Core Audio output M
+        ├─ De-Feedback AU ─ atomic output gate ─ output meter ─ Core Audio output M
+        │
+        └─ dry fallback ─── atomic output gate ─ output meter ─ Core Audio output M
 ```
 
-The application has one `juce::AudioDeviceManager`, one `AudioProcessorPlayer`, and one `AudioProcessorGraph`. Every lane receives its own De-Feedback instance and meter node. Connections to the same output are summed by the graph.
+The application has one `juce::AudioDeviceManager`, one `AudioProcessorPlayer`, and one `AudioProcessorGraph`. Every lane receives its own De-Feedback instance plus raw-input and post-gate output meter nodes. Input and output channel assignments are exclusive across lanes; duplicate routing is rejected by both the UI and engine.
 
 ## Audio Unit discovery
 
@@ -49,7 +51,7 @@ Settings are stored at:
 ~/Library/Application Support/RJ Studios Australia/DeFeedback Live/settings.xml
 ```
 
-The file contains device names, sample rate, buffer size, lane mappings, operator dry state, and each AU instance's opaque state block. Writes use a temporary file followed by atomic replacement.
+The file contains device names, sample rate, buffer size, lane mappings, operator bypass state, main/plugin window layouts and each AU instance's opaque state block. Open plugin editors are recreated at their saved positions. Writes use a temporary file followed by atomic replacement. Version 0.2 migrates reads from the original `~/Library/RJ Studios Australia/...` path and writes future changes to the Application Support path above.
 
 No licence credentials or plugin binaries are stored by the host.
 
@@ -59,6 +61,7 @@ No licence credentials or plugin binaries are stored by the host.
 |---|---|
 | Plugin missing or instance load failure | Lane passes dry and displays an amber warning |
 | Invalid input/output index | Lane is disconnected and marked invalid |
+| Duplicate input or output assignment | Later lane is disconnected and marked duplicate |
 | Operator dry bypass | Lane passes dry and displays an amber warning |
 | Global mute | Plugins keep processing; samples are zeroed immediately before graph output |
 | Device change/disconnect | Callback stops; graph rebuild is scheduled on the message thread |

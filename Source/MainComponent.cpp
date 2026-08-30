@@ -71,8 +71,40 @@ public:
 
         dryToggle.setToggleState (config.dry, juce::dontSendNotification);
         dryToggle.setColour (juce::ToggleButton::textColourId, amber);
+        dryToggle.setTooltip ("Bypass De-Feedback and pass the input dry.");
         dryToggle.onClick = [this] { commit(); };
         addAndMakeVisible (dryToggle);
+
+        strengthSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        strengthSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 22);
+        strengthSlider.setRange (0.0, 100.0, 0.1);
+        strengthSlider.setTextValueSuffix ("%");
+        strengthSlider.setValue (100.0, juce::dontSendNotification);
+        strengthSlider.setTooltip ("De-Feedback Strength");
+        strengthSlider.onValueChange = [this]
+        {
+            if (onStrengthChanged != nullptr)
+                onStrengthChanged (index, static_cast<float> (strengthSlider.getValue() / 100.0));
+            if (! strengthSlider.isMouseButtonDown() && onPluginControlCommitted != nullptr)
+                onPluginControlCommitted();
+        };
+        strengthSlider.onDragEnd = [this]
+        {
+            if (onPluginControlCommitted != nullptr)
+                onPluginControlCommitted();
+        };
+        addAndMakeVisible (strengthSlider);
+
+        pluginMuteToggle.setColour (juce::ToggleButton::textColourId, red);
+        pluginMuteToggle.setTooltip ("The De-Feedback plugin's own Mute parameter.");
+        pluginMuteToggle.onClick = [this]
+        {
+            if (onPluginMuteChanged != nullptr)
+                onPluginMuteChanged (index, pluginMuteToggle.getToggleState());
+            if (onPluginControlCommitted != nullptr)
+                onPluginControlCommitted();
+        };
+        addAndMakeVisible (pluginMuteToggle);
 
         statusLabel.setText ("WAITING", juce::dontSendNotification);
         statusLabel.setFont (juce::FontOptions (12.0f, juce::Font::bold));
@@ -93,7 +125,8 @@ public:
                 onRemove (index);
         };
         addAndMakeVisible (removeButton);
-        addAndMakeVisible (meter);
+        addAndMakeVisible (inputMeter);
+        addAndMakeVisible (outputMeter);
     }
 
     LaneConfig getConfig() const
@@ -108,12 +141,33 @@ public:
         return result;
     }
 
+    void setExclusiveRouteChoices (const juce::Array<LaneConfig>& lanes)
+    {
+        for (int other = 0; other < lanes.size(); ++other)
+        {
+            if (other == index)
+                continue;
+
+            if (lanes[other].inputChannel != config.inputChannel)
+                inputCombo.setItemEnabled (lanes[other].inputChannel + 1, false);
+
+            if (lanes[other].outputChannel != config.outputChannel)
+                outputCombo.setItemEnabled (lanes[other].outputChannel + 1, false);
+        }
+    }
+
     void setStatus (const LaneStatus& status)
     {
         statusLabel.setText (status.text, juce::dontSendNotification);
         statusLabel.setColour (juce::Label::textColourId, status.isDryFallback ? amber : green);
         editorButton.setEnabled (status.editorAvailable);
-        meter.setLevel (status.peak);
+        strengthSlider.setEnabled (status.strengthAvailable);
+        pluginMuteToggle.setEnabled (status.pluginMuteAvailable);
+        if (! strengthSlider.isMouseButtonDown())
+            strengthSlider.setValue (status.strengthNormalized * 100.0, juce::dontSendNotification);
+        pluginMuteToggle.setToggleState (status.pluginMuted, juce::dontSendNotification);
+        inputMeter.setLevel (status.inputPeak);
+        outputMeter.setLevel (status.outputPeak);
     }
 
     void resized() override
@@ -121,26 +175,35 @@ public:
         auto area = getLocalBounds().reduced (8, 6);
         numberLabel.setBounds (area.removeFromLeft (34));
         area.removeFromLeft (6);
-        nameEditor.setBounds (area.removeFromLeft (130));
+        nameEditor.setBounds (area.removeFromLeft (108));
         area.removeFromLeft (8);
-        inputCombo.setBounds (area.removeFromLeft (155));
+        inputCombo.setBounds (area.removeFromLeft (124));
         area.removeFromLeft (8);
-        outputCombo.setBounds (area.removeFromLeft (155));
+        inputMeter.setBounds (area.removeFromLeft (58).withSizeKeepingCentre (58, 10));
         area.removeFromLeft (8);
-        dryToggle.setBounds (area.removeFromLeft (92));
+        strengthSlider.setBounds (area.removeFromLeft (116));
+        area.removeFromLeft (6);
+        editorButton.setBounds (area.removeFromLeft (44));
         area.removeFromLeft (8);
-        meter.setBounds (area.removeFromLeft (90).withSizeKeepingCentre (90, 10));
-        area.removeFromLeft (12);
+        pluginMuteToggle.setBounds (area.removeFromLeft (66));
+        area.removeFromLeft (6);
+        dryToggle.setBounds (area.removeFromLeft (78));
+        area.removeFromLeft (8);
+        outputMeter.setBounds (area.removeFromLeft (58).withSizeKeepingCentre (58, 10));
+        area.removeFromLeft (8);
+        outputCombo.setBounds (area.removeFromLeft (124));
+        area.removeFromLeft (10);
         removeButton.setBounds (area.removeFromRight (34));
         area.removeFromRight (8);
-        editorButton.setBounds (area.removeFromRight (76));
-        area.removeFromRight (10);
         statusLabel.setBounds (area);
     }
 
     std::function<void()> onChanged;
+    std::function<void()> onPluginControlCommitted;
     std::function<void(int)> onOpenEditor;
     std::function<void(int)> onRemove;
+    std::function<void(int, float)> onStrengthChanged;
+    std::function<void(int, bool)> onPluginMuteChanged;
 
 private:
     static void populateChannels (juce::ComboBox& combo,
@@ -173,10 +236,13 @@ private:
     juce::TextEditor nameEditor;
     juce::ComboBox inputCombo;
     juce::ComboBox outputCombo;
-    juce::ToggleButton dryToggle { "DRY PASS" };
+    juce::ToggleButton dryToggle { "BYPASS" };
     juce::Label statusLabel;
-    PeakMeter meter;
-    juce::TextButton editorButton { "OPEN UI" };
+    PeakMeter inputMeter;
+    PeakMeter outputMeter;
+    juce::Slider strengthSlider;
+    juce::ToggleButton pluginMuteToggle { "MUTE" };
+    juce::TextButton editorButton { "UI" };
     juce::TextButton removeButton { "X" };
 };
 
@@ -207,6 +273,15 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
     for (auto* combo : { &deviceCombo, &rateCombo, &bufferCombo })
         addAndMakeVisible (*combo);
 
+    refreshDevicesButton.setTooltip ("Rescan Core Audio after connecting or powering an interface.");
+    refreshDevicesButton.onClick = [this]
+    {
+        engine.refreshDeviceList();
+        refreshAllControls();
+        showMessage ("Core Audio device list refreshed.", false);
+    };
+    addAndMakeVisible (refreshDevicesButton);
+
     deviceCombo.onChange = [this]
     {
         if (refreshingControls || ! juce::isPositiveAndBelow (deviceCombo.getSelectedItemIndex(), deviceChoices.size()))
@@ -215,6 +290,7 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
         const auto error = engine.selectDevice (deviceChoices.getReference (deviceCombo.getSelectedItemIndex()));
         showMessage (error.isEmpty() ? "Audio device changed." : error, error.isNotEmpty());
         refreshAllControls();
+        rebuildLaneRows();
         saveConfig();
     };
 
@@ -241,16 +317,27 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
     };
 
     startStopButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff236b4b));
+    startStopButton.setTooltip ("Start or stop the Core Audio callback and all plugin processing.");
     startStopButton.onClick = [this] { startOrStop(); };
     addAndMakeVisible (startStopButton);
 
     emergencyButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff8f2f33));
+    emergencyButton.setTooltip ("Keep processing active but zero every physical output after the plugins.");
     emergencyButton.onClick = [this]
     {
         engine.setEmergencyMuted (! engine.isEmergencyMuted());
         updateRuntimeStatus();
     };
     addAndMakeVisible (emergencyButton);
+
+    resetXRunsButton.setTooltip ("Set the displayed session XRun count back to zero.");
+    resetXRunsButton.onClick = [this]
+    {
+        engine.resetXRunCount();
+        showMessage ("Session XRun counter reset.", false);
+        updateRuntimeStatus();
+    };
+    addAndMakeVisible (resetXRunsButton);
 
     addLaneButton.onClick = [this]
     {
@@ -260,8 +347,30 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
             return;
         }
 
-        const auto id = config.lanes.size() + 1;
-        config.lanes.add ({ id, "Vocal " + juce::String (id), id - 1, id - 1, false, {} });
+        auto id = 1;
+        for (const auto& lane : config.lanes)
+            id = juce::jmax (id, lane.id + 1);
+
+        auto inputChannel = 0;
+        auto outputChannel = 0;
+        for (;; ++inputChannel)
+        {
+            auto used = false;
+            for (const auto& lane : config.lanes)
+                used = used || lane.inputChannel == inputChannel;
+            if (! used)
+                break;
+        }
+        for (;; ++outputChannel)
+        {
+            auto used = false;
+            for (const auto& lane : config.lanes)
+                used = used || lane.outputChannel == outputChannel;
+            if (! used)
+                break;
+        }
+
+        config.lanes.add ({ id, "Vocal " + juce::String (id), inputChannel, outputChannel, false, {}, false, {} });
         rebuildLaneRows();
         applyLanes();
     };
@@ -305,7 +414,7 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
     alertLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     addAndMakeVisible (alertLabel);
 
-    laneHeaderLabel.setText ("#     NAME                         INPUT                         OUTPUT                 MODE                 LEVEL             STATUS",
+    laneHeaderLabel.setText ("#     NAME                 INPUT                 IN       STRENGTH / UI       MUTE     BYPASS      OUT       OUTPUT                 STATUS",
                              juce::dontSendNotification);
     laneHeaderLabel.setColour (juce::Label::textColourId, mutedText);
     laneHeaderLabel.setFont (juce::FontOptions (11.0f, juce::Font::bold));
@@ -333,7 +442,7 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
             showMessage ("Launch at login needs attention: " + loginError, true);
     }
 
-    setSize (1080, 720);
+    setSize (1200, 720);
     startTimerHz (10);
 
     if (config.autoStart && ! safeLaunch)
@@ -378,28 +487,31 @@ void MainComponent::resized()
     auto setupPanel = area.removeFromTop (146).reduced (16, 12);
     auto firstLine = setupPanel.removeFromTop (54);
 
-    auto deviceArea = firstLine.removeFromLeft (390);
+    auto deviceArea = firstLine.removeFromLeft (285);
     deviceLabel.setBounds (deviceArea.removeFromTop (18));
     deviceCombo.setBounds (deviceArea.removeFromTop (30));
+    firstLine.removeFromLeft (8);
+    refreshDevicesButton.setBounds (firstLine.removeFromLeft (88).reduced (0, 3));
     firstLine.removeFromLeft (12);
 
-    auto rateArea = firstLine.removeFromLeft (140);
+    auto rateArea = firstLine.removeFromLeft (120);
     rateLabel.setBounds (rateArea.removeFromTop (18));
     rateCombo.setBounds (rateArea.removeFromTop (30));
     firstLine.removeFromLeft (12);
 
-    auto bufferArea = firstLine.removeFromLeft (140);
+    auto bufferArea = firstLine.removeFromLeft (130);
     bufferLabel.setBounds (bufferArea.removeFromTop (18));
     bufferCombo.setBounds (bufferArea.removeFromTop (30));
     firstLine.removeFromLeft (18);
 
-    startStopButton.setBounds (firstLine.removeFromLeft (130).reduced (0, 3));
+    startStopButton.setBounds (firstLine.removeFromLeft (120).reduced (0, 3));
     firstLine.removeFromLeft (10);
     emergencyButton.setBounds (firstLine.reduced (0, 3));
 
     auto secondLine = setupPanel.removeFromTop (38);
     autoStartToggle.setBounds (secondLine.removeFromLeft (155));
     launchAtLoginToggle.setBounds (secondLine.removeFromLeft (145));
+    resetXRunsButton.setBounds (secondLine.removeFromLeft (112).reduced (2, 5));
     metricsLabel.setBounds (secondLine);
 
     pluginLabel.setBounds (setupPanel.removeFromTop (24));
@@ -413,7 +525,7 @@ void MainComponent::resized()
     area.removeFromTop (4);
     laneViewport.setBounds (area);
 
-    const auto rowHeight = 52;
+    const auto rowHeight = 56;
     laneContainer.setSize (laneViewport.getMaximumVisibleWidth(), juce::jmax (area.getHeight(), laneRows.size() * rowHeight));
     for (int index = 0; index < laneRows.size(); ++index)
         laneRows[index]->setBounds (0, index * rowHeight, laneContainer.getWidth(), rowHeight - 2);
@@ -485,8 +597,18 @@ void MainComponent::rebuildLaneRows()
     for (int index = 0; index < config.lanes.size(); ++index)
     {
         auto* row = laneRows.add (new LaneRow (index, config.lanes[index], inputNames, outputNames));
+        row->setExclusiveRouteChoices (config.lanes);
         row->onChanged = [this] { applyLanes(); };
+        row->onPluginControlCommitted = [this] { saveConfig(); };
         row->onOpenEditor = [this] (int lane) { engine.openPluginEditor (lane); };
+        row->onStrengthChanged = [this] (int lane, float strength)
+        {
+            engine.setLaneStrength (lane, strength);
+        };
+        row->onPluginMuteChanged = [this] (int lane, bool muted)
+        {
+            engine.setLanePluginMuted (lane, muted);
+        };
         row->onRemove = [this] (int lane)
         {
             if (config.lanes.size() <= 1)
@@ -496,8 +618,6 @@ void MainComponent::rebuildLaneRows()
             }
 
             config.lanes.remove (lane);
-            for (int i = 0; i < config.lanes.size(); ++i)
-                config.lanes.getReference (i).id = i + 1;
             rebuildLaneRows();
             applyLanes();
         };
@@ -513,10 +633,25 @@ void MainComponent::applyLanes()
     for (int index = 0; index < laneRows.size(); ++index)
     {
         auto lane = laneRows[index]->getConfig();
-        lane.id = index + 1;
         if (juce::isPositiveAndBelow (index, config.lanes.size()))
+        {
+            lane.id = config.lanes[index].id;
             lane.pluginStateBase64 = config.lanes[index].pluginStateBase64;
+            lane.editorOpen = config.lanes[index].editorOpen;
+            lane.editorWindowState = config.lanes[index].editorWindowState;
+        }
         updated.add (std::move (lane));
+    }
+
+    if (const auto routeError = validateExclusiveRoutes (updated); routeError.isNotEmpty())
+    {
+        showMessage (routeError + " Selection reverted.", true);
+        juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
+        {
+            if (safe != nullptr)
+                safe->rebuildLaneRows();
+        });
+        return;
     }
 
     config.lanes = std::move (updated);
@@ -538,6 +673,12 @@ void MainComponent::saveConfig()
     juce::String error;
     if (! settings.save (config, error))
         showMessage (error, true);
+}
+
+void MainComponent::storeMainWindowState (const juce::String& state)
+{
+    config.mainWindowState = state;
+    saveConfig();
 }
 
 void MainComponent::showMessage (const juce::String& message, bool isError)
@@ -603,7 +744,7 @@ void MainComponent::updateRuntimeStatus()
     }
     else if (dryCount > 0)
     {
-        alertLabel.setText ("DRY PASS ACTIVE ON " + juce::String (dryCount)
+        alertLabel.setText ("BYPASS / DRY FALLBACK ACTIVE ON " + juce::String (dryCount)
                                 + (dryCount == 1 ? " LANE — " : " LANES — ")
                                 + "FEEDBACK PROTECTION IS OFF",
                             juce::dontSendNotification);

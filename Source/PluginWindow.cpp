@@ -4,12 +4,17 @@ namespace defeedback
 {
 PluginWindow::PluginWindow (juce::AudioProcessorGraph::Node::Ptr processorNode,
                             juce::OwnedArray<PluginWindow>& activeWindows,
-                            int laneNumber)
+                            int laneNumber,
+                            int laneId,
+                            const juce::String& savedWindowState,
+                            ClosedCallback closedCallback)
     : DocumentWindow ("De-Feedback — Lane " + juce::String (laneNumber),
                       juce::Colours::black,
                       minimiseButton | closeButton),
       windows (activeWindows),
-      node (std::move (processorNode))
+      node (std::move (processorNode)),
+      onUserClosed (std::move (closedCallback)),
+      id (laneId)
 {
     setUsingNativeTitleBar (true);
     setAlwaysOnTop (false);
@@ -32,7 +37,9 @@ PluginWindow::PluginWindow (juce::AudioProcessorGraph::Node::Ptr processorNode,
         setSize (420, 180);
     }
 
-    centreWithSize (getWidth(), getHeight());
+    if (savedWindowState.isEmpty() || ! restoreWindowStateFromString (savedWindowState))
+        centreWithSize (getWidth(), getHeight());
+
     setVisible (true);
     toFront (true);
 }
@@ -44,6 +51,9 @@ PluginWindow::~PluginWindow()
 
 void PluginWindow::closeButtonPressed()
 {
+    if (onUserClosed != nullptr)
+        onUserClosed (id, getWindowStateAsString());
+
     windows.removeObject (this);
 }
 }

@@ -4,8 +4,8 @@ set -eu
 configuration="${1:-Release}"
 build_dir="${2:-build-${configuration}}"
 app="${build_dir}/DeFeedbackLive_artefacts/${configuration}/DeFeedback Live.app"
-archive="dist/DeFeedback-Live-0.1.0-adhoc-arm64.zip"
-temporary_archive="dist/.DeFeedback-Live-0.1.0-adhoc-arm64.tmp.zip"
+archive="dist/DeFeedback-Live-0.2.0-adhoc-arm64.zip"
+temporary_archive="dist/.DeFeedback-Live-0.2.0-adhoc-arm64.tmp.zip"
 
 if [ ! -d "${app}" ]; then
     echo "Missing ${app}; build the Release configuration first." >&2

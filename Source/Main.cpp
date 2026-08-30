@@ -13,17 +13,32 @@ public:
                           allButtons)
     {
         setUsingNativeTitleBar (true);
-        setContentOwned (new MainComponent (safeLaunch), true);
+        mainContent = new MainComponent (safeLaunch);
+        setContentOwned (mainContent, true);
         setResizable (true, true);
-        setResizeLimits (920, 620, 1500, 1100);
-        centreWithSize (getWidth(), getHeight());
+        setResizeLimits (1120, 620, 1600, 1100);
+
+        if (mainContent->getSavedMainWindowState().isEmpty()
+            || ! restoreWindowStateFromString (mainContent->getSavedMainWindowState()))
+            centreWithSize (getWidth(), getHeight());
+
         setVisible (true);
+        mainContent->restorePluginWindows();
+    }
+
+    ~MainWindow() override
+    {
+        if (mainContent != nullptr)
+            mainContent->storeMainWindowState (getWindowStateAsString());
     }
 
     void closeButtonPressed() override
     {
         juce::JUCEApplication::getInstance()->systemRequestedQuit();
     }
+
+private:
+    MainComponent* mainContent = nullptr;
 };
 
 class Application final : public juce::JUCEApplication
