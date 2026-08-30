@@ -1,6 +1,7 @@
 #include "../Source/Core/RingGuardCore.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <iostream>
@@ -17,6 +18,76 @@ int failures = 0;
 void expect (bool condition, const char* message)
 {
     if (! condition) { ++failures; std::cerr << "FAIL: " << message << '\n'; }
+}
+
+struct LoopBandPass
+{
+    explicit LoopBandPass (double frequencyHz, double q)
+    {
+        constexpr double pi = 3.14159265358979323846;
+        const auto omega = 2.0 * pi * frequencyHz / sampleRate;
+        const auto alpha = std::sin (omega) / (2.0 * q);
+        const auto inverseA0 = 1.0 / (1.0 + alpha);
+        b0 = alpha * inverseA0;
+        b2 = -alpha * inverseA0;
+        a1 = -2.0 * std::cos (omega) * inverseA0;
+        a2 = (1.0 - alpha) * inverseA0;
+    }
+
+    float process (float input) noexcept
+    {
+        const auto output = b0 * input + z1;
+        z1 = -a1 * output + z2;
+        z2 = b2 * input - a2 * output;
+        return static_cast<float> (output);
+    }
+
+    double b0 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0;
+    double z1 = 0.0, z2 = 0.0;
+};
+
+float simulateClosedLoop (bool enableRingGuard)
+{
+    constexpr std::size_t delaySamples = 173;
+    constexpr std::size_t totalSamples = static_cast<std::size_t> (sampleRate * 2.0);
+    constexpr std::size_t excitationSamples = 4800;
+    constexpr float loopGain = 2.5f;
+
+    ringguard::RealtimeProcessor processor;
+    processor.prepare (sampleRate, blockSize, 1);
+    processor.setSettings ({ 1.0f, 0.90f, 6 });
+
+    LoopBandPass loudspeakerRoomPath (997.0, 14.0);
+    std::array<float, delaySamples> delay {};
+    std::mt19937 generator (0x4c4f4f50u);
+    std::normal_distribution<float> excitation (0.0f, 0.002f);
+    std::size_t delayIndex = 0;
+    double lateEnergy = 0.0;
+    std::size_t lateSamples = 0;
+
+    for (std::size_t index = 0; index < totalSamples; ++index)
+    {
+        const auto returned = loudspeakerRoomPath.process (delay[delayIndex]);
+        const auto source = index < excitationSamples ? excitation (generator) : 0.0f;
+        auto output = source + loopGain * returned;
+
+        if (enableRingGuard)
+        {
+            float* channel[] { &output };
+            processor.process (channel, 1, 1);
+        }
+
+        delay[delayIndex] = std::clamp (output, -4.0f, 4.0f);
+        delayIndex = (delayIndex + 1) % delaySamples;
+
+        if (index >= totalSamples - static_cast<std::size_t> (sampleRate * 0.5))
+        {
+            lateEnergy += static_cast<double> (output) * output;
+            ++lateSamples;
+        }
+    }
+
+    return static_cast<float> (std::sqrt (lateEnergy / static_cast<double> (lateSamples)));
 }
 
 float rms (const std::vector<float>& signal, std::size_t first, std::size_t count)
@@ -94,6 +165,15 @@ void testBroadbandNoiseDoesNotRunAway()
     expect (processor.getTelemetry().activeNotches <= 1, "broadband noise does not fill the notch pool");
 }
 
+void testClosedLoopGainBeforeFeedbackBaseline()
+{
+    const auto unprocessedLateRms = simulateClosedLoop (false);
+    const auto processedLateRms = simulateClosedLoop (true);
+    expect (unprocessedLateRms > 1.0f, "the reference loop reaches sustained feedback");
+    expect (processedLateRms < unprocessedLateRms * 0.10f,
+            "RingGuard increases stability in the deterministic closed-loop fixture");
+}
+
 void testStereoUsesLinkedControl()
 {
     ringguard::RealtimeProcessor processor;
@@ -127,6 +207,7 @@ int main()
     testSilenceAndInvalidInputAreSafe();
     testSustainedNarrowToneIsReduced();
     testBroadbandNoiseDoesNotRunAway();
+    testClosedLoopGainBeforeFeedbackBaseline();
     testStereoUsesLinkedControl();
     if (failures == 0) std::cout << "All RingGuard core tests passed.\n";
     return failures == 0 ? 0 : 1;
