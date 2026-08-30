@@ -1,0 +1,35 @@
+name: macOS build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel 4
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Verify Apple Silicon binary
+        run: lipo -archs "build/DeFeedbackLive_artefacts/Release/DeFeedback Live.app/Contents/MacOS/DeFeedback Live" | grep -qx arm64
+
+      - name: Package ad-hoc-signed engineering build
+        run: ./scripts/package-adhoc.sh Release build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeFeedback-Live-adhoc-arm64
+          path: dist/DeFeedback-Live-0.1.0-adhoc-arm64.zip
+          if-no-files-found: error

@@ -1,0 +1,20 @@
+# Build products
+/build/
+/build-*/
+/Builds/
+/dist/
+/cmake-build-*/
+*.xcuserstate
+xcuserdata/
+
+# macOS
+.DS_Store
+
+# Local signing and release material
+*.p12
+*.provisionprofile
+notarization-profile.json
+
+# De-Feedback is installed and licensed separately. Never vendor its binaries.
+*.component
+*.vst3

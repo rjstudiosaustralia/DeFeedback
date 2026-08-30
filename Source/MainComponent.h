@@ -1,0 +1,71 @@
+#pragma once
+
+#include "AppConfig.h"
+#include "AudioEngine.h"
+#include "SettingsStore.h"
+
+#include <juce_gui_extra/juce_gui_extra.h>
+
+namespace defeedback
+{
+class LaneRow;
+
+class MainComponent final : public juce::Component,
+                            private juce::Timer,
+                            private juce::ChangeListener
+{
+public:
+    explicit MainComponent (bool safeLaunch = false);
+    ~MainComponent() override;
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    void timerCallback() override;
+    void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    void refreshAllControls();
+    void refreshDeviceControls();
+    void rebuildLaneRows();
+    void applyLanes();
+    void saveConfig();
+    void showMessage (const juce::String&, bool isError);
+    void startOrStop();
+    void updateRuntimeStatus();
+
+    SettingsStore settings;
+    AppConfig config;
+    AudioEngine engine;
+
+    juce::Label titleLabel;
+    juce::Label subtitleLabel;
+    juce::Label deviceLabel;
+    juce::Label rateLabel;
+    juce::Label bufferLabel;
+    juce::Label metricsLabel;
+    juce::Label pluginLabel;
+    juce::Label alertLabel;
+    juce::Label laneHeaderLabel;
+
+    juce::ComboBox deviceCombo;
+    juce::ComboBox rateCombo;
+    juce::ComboBox bufferCombo;
+    juce::TextButton startStopButton { "START AUDIO" };
+    juce::TextButton emergencyButton { "MUTE EVERYTHING" };
+    juce::TextButton addLaneButton { "+ ADD LANE" };
+    juce::ToggleButton autoStartToggle { "Auto-start audio" };
+    juce::ToggleButton launchAtLoginToggle { "Launch at login" };
+
+    juce::Viewport laneViewport;
+    juce::Component laneContainer;
+    juce::OwnedArray<LaneRow> laneRows;
+    juce::Array<DeviceChoice> deviceChoices;
+    juce::Array<double> sampleRates;
+    juce::Array<int> bufferSizes;
+
+    bool refreshingControls = false;
+    bool safeLaunch = false;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
+};
+}
