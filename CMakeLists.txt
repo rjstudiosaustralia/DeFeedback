@@ -8,8 +8,17 @@ set(CMAKE_OSX_ARCHITECTURES arm64 CACHE STRING "Apple Silicon only")
 set(CMAKE_OSX_DEPLOYMENT_TARGET 13.0 CACHE STRING "Minimum supported macOS")
 
 option(DEFEEDBACK_BUILD_TESTS "Build the configuration test suite" ON)
+option(DEFEEDBACK_BUILD_CLEANROOM_PLUGIN "Build the RingGuard clean-room prototype" ON)
+
+if(DEFEEDBACK_BUILD_TESTS)
+    enable_testing()
+endif()
 
 add_subdirectory(external/JUCE)
+
+if(DEFEEDBACK_BUILD_CLEANROOM_PLUGIN)
+    add_subdirectory(CleanRoom)
+endif()
 
 juce_add_gui_app(DeFeedbackLive
     VERSION ${PROJECT_VERSION}
@@ -55,8 +64,6 @@ target_link_libraries(DeFeedbackLive PRIVATE
     juce::juce_recommended_warning_flags)
 
 if(DEFEEDBACK_BUILD_TESTS)
-    enable_testing()
-
     juce_add_console_app(DeFeedbackTests
         PRODUCT_NAME "DeFeedback Tests")
 
