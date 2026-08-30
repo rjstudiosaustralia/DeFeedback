@@ -275,7 +275,7 @@ DeviceChoice AudioEngine::getCurrentDeviceChoice() const
     result.outputName = setup.outputDeviceName;
     result.displayName = result.inputName == result.outputName
                        ? result.inputName
-                       : result.inputName + " → " + result.outputName;
+                       : result.inputName + " -> " + result.outputName;
     return result;
 }
 
@@ -575,7 +575,7 @@ juce::String AudioEngine::rebuildGraph()
 
                 if (lane.dry)
                 {
-                    runtime.status = "BYPASSED — dry pass";
+                    runtime.status = "BYPASSED - dry pass";
                     runtime.dryFallback = true;
                 }
                 else if (connectedToPlugin)
@@ -586,19 +586,19 @@ juce::String AudioEngine::rebuildGraph()
                 else
                 {
                     runtime.pluginNode = nullptr;
-                    runtime.status = "DRY — graph connection failed";
+                    runtime.status = "DRY - graph connection failed";
                     runtime.dryFallback = true;
                 }
             }
             else
             {
-                runtime.status = "DRY — " + (pluginError.isNotEmpty() ? pluginError : "mono layout rejected");
+                runtime.status = "DRY - " + (pluginError.isNotEmpty() ? pluginError : "mono layout rejected");
                 runtime.dryFallback = true;
             }
         }
         else
         {
-            runtime.status = lane.dry ? "BYPASSED — dry pass" : "DRY — plugin unavailable";
+            runtime.status = lane.dry ? "BYPASSED - dry pass" : "DRY - plugin unavailable";
             runtime.dryFallback = true;
         }
 

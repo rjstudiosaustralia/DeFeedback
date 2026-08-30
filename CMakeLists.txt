@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(DeFeedbackLive VERSION 0.2.0 LANGUAGES C CXX OBJC OBJCXX)
+project(DeFeedbackLive VERSION 0.3.0 LANGUAGES C CXX OBJC OBJCXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,17 +8,25 @@ set(CMAKE_OSX_ARCHITECTURES arm64 CACHE STRING "Apple Silicon only")
 set(CMAKE_OSX_DEPLOYMENT_TARGET 13.0 CACHE STRING "Minimum supported macOS")
 
 option(DEFEEDBACK_BUILD_TESTS "Build the configuration test suite" ON)
+option(DEFEEDBACK_QA_BUILD "Use a separate bundle identity for side-by-side UI QA" OFF)
+
+set(DEFEEDBACK_PRODUCT_NAME "DeFeedback Live")
+set(DEFEEDBACK_BUNDLE_ID "au.com.rjstudiosaustralia.defeedback-live")
+if(DEFEEDBACK_QA_BUILD)
+    set(DEFEEDBACK_PRODUCT_NAME "DeFeedback Live QA")
+    set(DEFEEDBACK_BUNDLE_ID "au.com.rjstudiosaustralia.defeedback-live.qa")
+endif()
 
 add_subdirectory(external/JUCE)
 
 juce_add_gui_app(DeFeedbackLive
     VERSION ${PROJECT_VERSION}
     BUILD_VERSION ${PROJECT_VERSION}
-    PRODUCT_NAME "DeFeedback Live"
+    PRODUCT_NAME "${DEFEEDBACK_PRODUCT_NAME}"
     COMPANY_NAME "RJ Studios Australia"
     COMPANY_WEBSITE "https://github.com/rjstudiosaustralia"
     COMPANY_EMAIL "ryansomerfield@hotmail.com"
-    BUNDLE_ID "au.com.rjstudiosaustralia.defeedback-live"
+    BUNDLE_ID "${DEFEEDBACK_BUNDLE_ID}"
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT "DeFeedback Live needs access to audio interface inputs for live processing."
     NEEDS_WEB_BROWSER FALSE
@@ -36,6 +44,7 @@ target_sources(DeFeedbackLive PRIVATE
     Source/SettingsStore.cpp)
 
 target_compile_definitions(DeFeedbackLive PRIVATE
+    DEFEEDBACK_UI_PREVIEW=$<BOOL:${DEFEEDBACK_QA_BUILD}>
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:DeFeedbackLive,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:DeFeedbackLive,JUCE_VERSION>"
     JUCE_PLUGINHOST_AU=1

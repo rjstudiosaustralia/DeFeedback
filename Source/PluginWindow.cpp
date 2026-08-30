@@ -8,7 +8,7 @@ PluginWindow::PluginWindow (juce::AudioProcessorGraph::Node::Ptr processorNode,
                             int laneId,
                             const juce::String& savedWindowState,
                             ClosedCallback closedCallback)
-    : DocumentWindow ("De-Feedback — Lane " + juce::String (laneNumber),
+    : DocumentWindow ("De-Feedback - Lane " + juce::String (laneNumber),
                       juce::Colours::black,
                       minimiseButton | closeButton),
       windows (activeWindows),
