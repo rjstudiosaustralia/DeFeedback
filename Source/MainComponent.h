@@ -61,6 +61,7 @@ private:
     juce::TextButton refreshDevicesButton { "REFRESH" };
     juce::TextButton resetXRunsButton { "RESET XRUNS" };
     juce::TextButton addLaneButton { "+ ADD LANE" };
+    juce::TextButton aboutButton { "ABOUT / SAFETY" };
     juce::ToggleButton autoStartToggle { "Auto-start audio" };
     juce::ToggleButton launchAtLoginToggle { "Launch at login" };
 

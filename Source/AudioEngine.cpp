@@ -8,7 +8,10 @@ namespace defeedback
 {
 namespace
 {
-constexpr int maxHardwareChannels = 256;
+// Enough to bootstrap every interface currently in scope. Once Core Audio has
+// opened the device, enableAllAvailableChannels() replaces this with the exact
+// channel counts reported by the driver.
+constexpr int bootstrapHardwareChannels = 256;
 const juce::String deFeedbackIdentifier { "AudioUnit:Effects/aufx,FbTI,jDSP" };
 
 juce::AudioProcessor::BusesLayout monoLayout()
@@ -50,8 +53,8 @@ juce::String AudioEngine::initialise (const AppConfig& config)
     configureAllChannels (preferred);
 
     suppressDeviceNotifications = true;
-    auto error = deviceManager.initialise (maxHardwareChannels,
-                                           maxHardwareChannels,
+    auto error = deviceManager.initialise (bootstrapHardwareChannels,
+                                           bootstrapHardwareChannels,
                                            nullptr,
                                            true,
                                            {},
@@ -60,6 +63,9 @@ juce::String AudioEngine::initialise (const AppConfig& config)
 
     if (error.isNotEmpty())
         return "Audio device: " + error;
+
+    if (error = enableAllAvailableChannels(); error.isNotEmpty())
+        return "Audio device channels: " + error;
 
     xRunBaseline = deviceManager.getXRunCount();
     return rebuildGraph();
@@ -130,9 +136,6 @@ juce::String AudioEngine::setLanes (const juce::Array<LaneConfig>& newLanes)
     }
 
     lanes = std::move (updated);
-
-    while (lanes.size() > maxLanes)
-        lanes.removeLast();
 
     if (lanes.isEmpty())
         lanes.add ({ 1, "Vocal 1", 0, 0, false, {}, false, {} });
@@ -223,6 +226,9 @@ juce::String AudioEngine::selectDevice (const DeviceChoice& choice)
     suppressDeviceNotifications = false;
 
     if (error.isNotEmpty())
+        return error;
+
+    if (error = enableAllAvailableChannels(); error.isNotEmpty())
         return error;
 
     resetXRunCount();
@@ -724,7 +730,25 @@ void AudioEngine::configureAllChannels (juce::AudioDeviceManager::AudioDeviceSet
     setup.useDefaultOutputChannels = false;
     setup.inputChannels.clear();
     setup.outputChannels.clear();
-    setup.inputChannels.setRange (0, maxHardwareChannels, true);
-    setup.outputChannels.setRange (0, maxHardwareChannels, true);
+    setup.inputChannels.setRange (0, bootstrapHardwareChannels, true);
+    setup.outputChannels.setRange (0, bootstrapHardwareChannels, true);
+}
+
+juce::String AudioEngine::enableAllAvailableChannels()
+{
+    auto* device = deviceManager.getCurrentAudioDevice();
+    if (device == nullptr)
+        return "No Core Audio device is open.";
+
+    auto setup = deviceManager.getAudioDeviceSetup();
+    setup.useDefaultInputChannels = false;
+    setup.useDefaultOutputChannels = false;
+    setup.inputChannels.clear();
+    setup.outputChannels.clear();
+    setup.inputChannels.setRange (0, device->getInputChannelNames().size(), true);
+    setup.outputChannels.setRange (0, device->getOutputChannelNames().size(), true);
+
+    const juce::ScopedValueSetter<bool> guard (suppressDeviceNotifications, true);
+    return deviceManager.setAudioDeviceSetup (setup, true);
 }
 }

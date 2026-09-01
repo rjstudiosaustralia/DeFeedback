@@ -2,19 +2,23 @@
 
 DeFeedback Live is a focused, Apple Silicon-native macOS host for running multiple independent mono instances of Alpha Labs De-Feedback in live sound systems.
 
-It is deliberately not a general-purpose DAW. The operator selects one Core Audio device, chooses the sample rate and buffer, maps up to ten mono input/output lanes, and opens each De-Feedback editor in its own window.
+It is deliberately not a general-purpose DAW. The operator selects one Core Audio device, chooses the sample rate and buffer, maps independent mono input/output lanes up to the device's available I/O capacity, and opens each De-Feedback editor in its own window.
 
 > [!IMPORTANT]
 > This project is independent and is not affiliated with or endorsed by Alpha Labs LLC. De-Feedback must be downloaded, installed, activated, and licensed separately. No Alpha Labs binary or licence data belongs in this repository.
 
+> [!CAUTION]
+> This is an engineering preview, not a show-qualified safety system. Use it entirely at your own risk. Live feedback and routing mistakes can produce sudden high sound levels, hearing damage, or equipment damage. Begin every test with the master outputs muted and validate the complete interface, console, network, and loudspeaker signal path before passing live audio. See the [full disclaimer](DISCLAIMER.md).
+
 ## Current status
 
-Version `0.3.0` is a working engineering preview:
+Version `0.4.0` is a working engineering preview:
 
 - arm64-only macOS application;
 - AUv2 hosting for De-Feedback 1.1.4 (`aufx/FbTI/jDSP`);
 - one Core Audio input/output pair at a time;
-- up to ten independent mono lanes;
+- independent mono lanes with no fixed application cap;
+- lane capacity determined by the selected device's unassigned input/output pairs;
 - arbitrary input-to-output routing;
 - exclusive routing that prevents an input or output channel being used by two lanes;
 - separate plugin editor windows;
@@ -33,7 +37,7 @@ Version `0.3.0` is a working engineering preview:
 - atomic setup and plugin-state persistence;
 - optional auto-start and native macOS launch-at-login.
 
-The app has been compiled and exercised on an M1 Max with the installed De-Feedback 1.1.4 demo. Ten-lane reliability still needs to be qualified on the target DVS, RME Digiface, and Focusrite RedNet TNX systems. See [Hardware validation](docs/HARDWARE_VALIDATION.md).
+The app has been compiled and exercised on an M1 Max with the installed De-Feedback 1.1.4 demo. Multi-lane reliability and the practical CPU ceiling still need to be qualified on the target DVS, RME Digiface, and Focusrite RedNet TNX systems. Removing the software cap does not imply that every lane count is real-time safe. See [Hardware validation](docs/HARDWARE_VALIDATION.md).
 
 ## Safety behavior
 
@@ -51,22 +55,25 @@ The per-lane `PLUGIN MUTE` checkbox is De-Feedback's own parameter and is saved 
 
 A hard in-process AUv2 crash can still terminate the host before it can choose a fallback. True crash isolation requires a different plugin format or a multi-process bridge and is not claimed in this release.
 
-## Requirements
+## Runtime requirements
 
 - Apple Silicon Mac;
 - macOS 13 or newer;
+- De-Feedback AU installed at `/Library/Audio/Plug-Ins/Components/Defeedback.component`;
+- an Alpha Labs demo or paid activation.
+
+## Source-build requirements
+
 - Xcode command-line tools;
 - CMake 3.25 or newer;
-- De-Feedback AU installed at `/Library/Audio/Plug-Ins/Components/Defeedback.component`;
-- an Alpha Labs demo or paid activation;
-- a JUCE licence appropriate for the product owner's revenue/funding tier.
+- a JUCE licence appropriate for the builder's use and revenue/funding tier.
 
 JUCE 9 is a pinned Git submodule and is licensed separately by Raw Material Software. The current JUCE Starter tier is free up to its published revenue/funding threshold; review the current JUCE terms before distributing or selling the app.
 
 ## Build
 
 ```bash
-git clone --recurse-submodules <private-repository-url>
+git clone --recurse-submodules https://github.com/rjstudiosaustralia/DeFeedback.git
 cd DeFeedback
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel
@@ -91,7 +98,8 @@ Convenience scripts are provided:
 ```
 
 The package script creates an ad-hoc-signed Apple Silicon engineering build in
-`dist/`. It is suitable for private hardware qualification on this Mac. Public
+`dist/`. Public preview downloads are not notarized, so macOS may require the
+tester to approve the app in Privacy & Security. A normal one-click public
 distribution still requires an Apple Developer ID signature and notarization.
 
 ## First live setup
@@ -101,7 +109,7 @@ distribution still requires an Apple Developer ID signature and notarization.
 3. Select the same Core Audio device for input and output.
 4. Start at 48 kHz and 128 samples.
 5. Add lanes and confirm each route says `PROCESSED`.
-6. Press `MUTE EVERYTHING`.
+6. Press `MUTE ALL OUTPUTS`.
 7. Start audio and watch CPU/XRuns for several minutes.
 8. Reduce the buffer one step at a time only after the configuration passes.
 9. Unmute outputs only after the console/interface routing has been checked for a parallel dry path.
@@ -110,10 +118,18 @@ The latency number is the device-reported Core Audio input-plus-output latency. 
 
 ## Repository policy
 
-- Keep the repository private unless the owner deliberately chooses another licence.
+- The repository is public and open source under GNU AGPLv3.
 - Never add `.component`, `.vst3`, activation, notarization, or signing files.
 - Pin JUCE updates and qualify them before changing the live build.
 - Hardware test results should be committed to `docs/HARDWARE_VALIDATION.md`.
+
+## Licence
+
+Copyright (c) 2026 Ryan Somerfield / RJ Studios Australia.
+
+DeFeedback Live is free and open-source software licensed under the [GNU Affero General Public License version 3](LICENSE). This matches JUCE's AGPLv3 open-source licensing path. Alternative commercial licensing may be offered separately by RJ Studios Australia for code it owns.
+
+JUCE and its bundled dependencies retain their own licences. Alpha Labs De-Feedback is separately installed and licensed and is not included here.
 
 ## Roadmap
 

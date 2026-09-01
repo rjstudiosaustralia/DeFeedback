@@ -100,6 +100,7 @@ private:
     int getActiveInputSpan() const;
     int getActiveOutputSpan() const;
     void configureAllChannels (juce::AudioDeviceManager::AudioDeviceSetup&) const;
+    juce::String enableAllAvailableChannels();
 
     juce::AudioDeviceManager deviceManager;
     juce::AudioPluginFormatManager pluginFormats;

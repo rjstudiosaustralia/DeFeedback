@@ -43,10 +43,12 @@ int main()
     expect (std::abs (estimateRoundTripMilliseconds (48000.0, 64, 0, 0) - 2.6666666667) < 0.0001,
             "zero-latency driver fallback uses two buffers");
 
-    juce::XmlElement oversized ("DEFEEDBACK_LIVE_CONFIG");
-    for (int index = 0; index < maxLanes + 3; ++index)
-        oversized.createNewChildElement ("LANE")->setAttribute ("id", index + 1);
-    expect (AppConfig::fromXml (oversized).lanes.size() == maxLanes, "config is capped at ten lanes");
+    juce::XmlElement manyLanes ("DEFEEDBACK_LIVE_CONFIG");
+    constexpr int savedLaneCount = 64;
+    for (int index = 0; index < savedLaneCount; ++index)
+        manyLanes.createNewChildElement ("LANE")->setAttribute ("id", index + 1);
+    expect (AppConfig::fromXml (manyLanes).lanes.size() == savedLaneCount,
+            "all saved lanes are restored without an application cap");
 
     juce::XmlElement empty ("DEFEEDBACK_LIVE_CONFIG");
     expect (AppConfig::fromXml (empty).lanes.size() == 1, "empty config restores one safe lane");

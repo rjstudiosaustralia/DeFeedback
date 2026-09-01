@@ -2,14 +2,14 @@
 
 ## Host
 
-### 0.2 — hardware qualification
+### Hardware qualification
 
 - Test DVS, RME Digiface, and RedNet TNX.
 - Add a structured soak-test recorder and CSV export.
 - Add an optional startup XRun baseline indicator.
-- Verify ten lanes on M4, M4 Pro, and later Apple Silicon targets.
+- Find the stable lane ceiling on M1 Max, M4, M4 Pro, and later Apple Silicon targets.
 
-### 0.3 — live hardening
+### Live hardening
 
 - Detect route/device identity changes by stable Core Audio UID instead of display name only.
 - Add explicit device-loss and recovered states.
@@ -17,7 +17,7 @@
 - Sign and notarize release builds.
 - Add a one-click diagnostic bundle with no licence data.
 
-### 0.4 — performance engine
+### Performance engine
 
 - Prototype fixed per-lane worker threads.
 - Join workers to the Core Audio device workgroup.

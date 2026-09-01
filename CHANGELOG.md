@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0 — 2026-09-01
+
+- Removed the fixed ten-lane application ceiling.
+- Made lane capacity follow the selected Core Audio device's available input/output pairs.
+- Enabled every input and output channel reported by the selected Core Audio driver after device open.
+- Added clear feedback when every device channel pair is assigned.
+- Restored every saved lane instead of truncating settings at ten.
+- Added the current lane count and device-pair capacity to the signal-flow summary.
+- Rebuilt lane choices when Core Audio devices are refreshed.
+- Made package filenames follow the built app version automatically.
+- Prepared the repository for public release under GNU AGPLv3.
+- Added explicit independence, warranty, and live-audio risk notices.
+- Added an in-app `ABOUT / SAFETY` notice for testers.
+- Embedded the licence, disclaimer, and corresponding-source location in release packages.
+- Updated GitHub Actions to Node 24-based releases with read-only repository permissions.
+
 ## 0.3.0 — 2026-08-30
 
 - Renamed the engine control to `START ENGINE` / `STOP ENGINE`.

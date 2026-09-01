@@ -15,6 +15,10 @@ const auto green = juce::Colour (0xff47d18c);
 const auto amber = juce::Colour (0xffffb454);
 const auto red = juce::Colour (0xffff5d62);
 
+#if DEFEEDBACK_UI_PREVIEW
+constexpr int previewChannelCount = 16;
+#endif
+
 AppConfig loadInitialConfig (SettingsStore& settings)
 {
    #if DEFEEDBACK_UI_PREVIEW
@@ -419,9 +423,26 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
     titleLabel.setColour (juce::Label::textColourId, text);
     addAndMakeVisible (titleLabel);
 
-    subtitleLabel.setText ("Ten-lane Apple Silicon live Audio Unit host", juce::dontSendNotification);
+    subtitleLabel.setText ("Apple Silicon live Audio Unit host", juce::dontSendNotification);
     subtitleLabel.setColour (juce::Label::textColourId, mutedText);
     addAndMakeVisible (subtitleLabel);
+
+    aboutButton.setTooltip ("Independence, licence, warranty, and live-audio safety notice.");
+    aboutButton.onClick = []
+    {
+        juce::AlertWindow::showMessageBoxAsync (
+            juce::MessageBoxIconType::InfoIcon,
+            "DeFeedback Live - About / Safety",
+            "DeFeedback Live " JUCE_APPLICATION_VERSION_STRING "\n"
+            "Copyright (c) 2026 Ryan Somerfield / RJ Studios Australia\n"
+            "Open-source software licensed under GNU AGPLv3.\n\n"
+            "Independent third-party host. Not affiliated with, sponsored by, approved by, or endorsed by Alpha Labs LLC. "
+            "De-Feedback is separately installed and licensed.\n\n"
+            "Engineering preview supplied without warranty. Use entirely at your own risk. "
+            "Live feedback and routing errors can cause dangerous sound levels, hearing injury, or equipment damage. "
+            "Begin muted, verify every route, and retain an independent hardware or console mute.");
+    };
+    addAndMakeVisible (aboutButton);
 
     for (auto* label : { &deviceLabel, &rateLabel, &bufferLabel, &engineLabel, &outputSafetyLabel })
     {
@@ -443,6 +464,7 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
     {
         engine.refreshDeviceList();
         refreshAllControls();
+        rebuildLaneRows();
         showMessage ("Core Audio device list refreshed.", false);
     };
     addAndMakeVisible (refreshDevicesButton);
@@ -506,9 +528,38 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
 
     addLaneButton.onClick = [this]
     {
-        if (config.lanes.size() >= maxLanes)
+       #if DEFEEDBACK_UI_PREVIEW
+        const auto inputChannelCount = previewChannelCount;
+        const auto outputChannelCount = previewChannelCount;
+       #else
+        const auto inputChannelCount = engine.getInputChannelNames().size();
+        const auto outputChannelCount = engine.getOutputChannelNames().size();
+       #endif
+
+        const auto findFirstUnusedChannel = [this] (int channelCount, bool input)
         {
-            showMessage ("The live rack is limited to ten lanes.", true);
+            for (int channel = 0; channel < channelCount; ++channel)
+            {
+                auto used = false;
+                for (const auto& lane : config.lanes)
+                    used = used || (input ? lane.inputChannel : lane.outputChannel) == channel;
+
+                if (! used)
+                    return channel;
+            }
+
+            return -1;
+        };
+
+        const auto inputChannel = findFirstUnusedChannel (inputChannelCount, true);
+        const auto outputChannel = findFirstUnusedChannel (outputChannelCount, false);
+
+        if (inputChannel < 0 || outputChannel < 0)
+        {
+            showMessage (inputChannelCount == 0 || outputChannelCount == 0
+                             ? "Select a Core Audio device with both input and output channels first."
+                             : "Every available input/output pair already has a lane.",
+                         true);
             return;
         }
 
@@ -516,30 +567,12 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
         for (const auto& lane : config.lanes)
             id = juce::jmax (id, lane.id + 1);
 
-        auto inputChannel = 0;
-        auto outputChannel = 0;
-        for (;; ++inputChannel)
-        {
-            auto used = false;
-            for (const auto& lane : config.lanes)
-                used = used || lane.inputChannel == inputChannel;
-            if (! used)
-                break;
-        }
-        for (;; ++outputChannel)
-        {
-            auto used = false;
-            for (const auto& lane : config.lanes)
-                used = used || lane.outputChannel == outputChannel;
-            if (! used)
-                break;
-        }
-
         config.lanes.add ({ id, "Vocal " + juce::String (id), inputChannel, outputChannel, false, {}, false, {} });
         rebuildLaneRows();
         applyLanes();
     };
     addAndMakeVisible (addLaneButton);
+    addLaneButton.setTooltip ("Add the next unused input/output pair. Capacity follows the selected Core Audio device.");
 
     autoStartToggle.setToggleState (config.autoStart, juce::dontSendNotification);
     autoStartToggle.onClick = [this]
@@ -655,6 +688,7 @@ void MainComponent::resized()
 {
     auto area = getLocalBounds().reduced (20);
     auto heading = area.removeFromTop (46);
+    aboutButton.setBounds (heading.removeFromRight (150).reduced (4, 7));
     titleLabel.setBounds (heading.removeFromLeft (360));
     subtitleLabel.setBounds (heading);
     area.removeFromTop (10);
@@ -796,7 +830,7 @@ void MainComponent::rebuildLaneRows()
     juce::StringArray inputNames;
     juce::StringArray outputNames;
    #if DEFEEDBACK_UI_PREVIEW
-    for (int channel = 0; channel < maxLanes; ++channel)
+    for (int channel = 0; channel < previewChannelCount; ++channel)
     {
         inputNames.add ("Input " + juce::String (channel + 1));
         outputNames.add ("Output " + juce::String (channel + 1));
@@ -805,6 +839,12 @@ void MainComponent::rebuildLaneRows()
     inputNames = engine.getInputChannelNames();
     outputNames = engine.getOutputChannelNames();
    #endif
+
+    const auto deviceCapacity = juce::jmin (inputNames.size(), outputNames.size());
+    routingHintLabel.setText ("SIGNAL FLOW  |  INPUT -> DE-FEEDBACK -> OUTPUT  |  "
+                                  + juce::String (config.lanes.size()) + " LANES  |  "
+                                  + juce::String (deviceCapacity) + " DEVICE I/O PAIRS",
+                              juce::dontSendNotification);
 
     for (int index = 0; index < config.lanes.size(); ++index)
     {

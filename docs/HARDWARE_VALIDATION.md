@@ -29,11 +29,11 @@ Record one row for each test. Do not infer untested lane counts.
 
 | Host | Device/driver | Transport | Buffer | Lanes | Closed UI CPU | Open UI CPU | New XRuns / 8h | Measured RTT | Pass |
 |---|---|---|---:|---:|---:|---:|---:|---:|---|
-| M1 Max | Dante Virtual Soundcard | Dante | 128 | 1/2/4/8/10 | TBD | TBD | TBD | TBD | TBD |
-| M1 Max | RME Digiface | USB/Thunderbolt | 32/64/128 | 1/2/4/8/10 | TBD | TBD | TBD | TBD | TBD |
-| M1 Max | Focusrite RedNet TNX | Thunderbolt/Dante | 32/64/128 | 1/2/4/8/10 | TBD | TBD | TBD | TBD | TBD |
-| M4 Mac mini | Target interface | Target transport | 32/64/128 | 1/2/4/8/10 | TBD | TBD | TBD | TBD | TBD |
-| M4 Pro or newer | Target interface | Target transport | 32/64/128 | 1/2/4/8/10 | TBD | TBD | TBD | TBD | TBD |
+| M1 Max | Dante Virtual Soundcard | Dante | 128 | 1/2/4/8/10/then device capacity | TBD | TBD | TBD | TBD | TBD |
+| M1 Max | RME Digiface | USB/Thunderbolt | 32/64/128 | 1/2/4/8/10/then device capacity | TBD | TBD | TBD | TBD | TBD |
+| M1 Max | Focusrite RedNet TNX | Thunderbolt/Dante | 32/64/128 | 1/2/4/8/10/then device capacity | TBD | TBD | TBD | TBD | TBD |
+| M4 Mac mini | Target interface | Target transport | 32/64/128 | 1/2/4/8/10/then device capacity | TBD | TBD | TBD | TBD | TBD |
+| M4 Pro or newer | Target interface | Target transport | 32/64/128 | 1/2/4/8/10/then device capacity | TBD | TBD | TBD | TBD | TBD |
 
 ## Test sequence
 
@@ -41,7 +41,7 @@ Record one row for each test. Do not infer untested lane counts.
 2. Disable unnecessary background applications and automatic OS updates for the test window.
 3. Launch with all outputs muted.
 4. Verify the selected device, 48 kHz, and desired buffer.
-5. Add lanes incrementally: 1, 2, 4, 8, then 10.
+5. Add lanes incrementally: 1, 2, 4, 8, 10, then continue toward the intended device capacity while watching CPU and XRuns.
 6. Feed representative isolated vocal material to every active input.
 7. Record CPU and XRun counts with all plugin windows closed.
 8. Open every editor, move windows, and adjust strength while observing XRuns.

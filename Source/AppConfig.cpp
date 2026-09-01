@@ -53,7 +53,7 @@ AppConfig AppConfig::fromXml (const juce::XmlElement& root)
 
     for (auto* child : root.getChildIterator())
     {
-        if (! child->hasTagName ("LANE") || result.lanes.size() >= maxLanes)
+        if (! child->hasTagName ("LANE"))
             continue;
 
         LaneConfig lane;

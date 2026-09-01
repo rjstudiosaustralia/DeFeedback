@@ -4,8 +4,6 @@
 
 namespace defeedback
 {
-constexpr int maxLanes = 10;
-
 struct LaneConfig
 {
     int id = 1;

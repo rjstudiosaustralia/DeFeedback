@@ -41,7 +41,7 @@ Normal discovery uses Core Audio registration. If the system component cache is 
 - Graph construction, state capture, and plugin editor creation happen on the message thread while callbacks are detached.
 - Device changes detach the callback, rebuild the graph, and reattach it.
 
-JUCE's `AudioProcessorGraph` currently renders these independent lanes serially in one callback. This is intentionally the simpler and more predictable first implementation. If target hardware cannot meet ten lanes at the required buffer, the next engine revision should use fixed worker threads joined to the Core Audio device workgroup. Parallelization must be benchmark-driven because synchronization overhead can be worse at very small buffers.
+JUCE's `AudioProcessorGraph` currently renders these independent lanes serially in one callback. The application does not impose a fixed lane count; the selected device's exclusive input/output pairs determine how many lanes can be configured. The practical live ceiling remains CPU-, buffer-, plugin-, and driver-dependent. If target hardware cannot meet the required lane count at the required buffer, a future engine revision can prototype fixed worker threads joined to the Core Audio device workgroup. Parallelization must be benchmark-driven because synchronization overhead can be worse at very small buffers.
 
 ## Persistence
 
