@@ -15,6 +15,7 @@
 - Added an in-app `ABOUT / SAFETY` notice for testers.
 - Embedded the licence, disclaimer, and corresponding-source location in release packages.
 - Updated GitHub Actions to Node 24-based releases with read-only repository permissions.
+- Promoted the public build to GitHub's Latest release and added direct download/install guidance.
 
 ## 0.3.0 — 2026-08-30
 

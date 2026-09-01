@@ -10,6 +10,21 @@ It is deliberately not a general-purpose DAW. The operator selects one Core Audi
 > [!CAUTION]
 > This is an engineering preview, not a show-qualified safety system. Use it entirely at your own risk. Live feedback and routing mistakes can produce sudden high sound levels, hearing damage, or equipment damage. Begin every test with the master outputs muted and validate the complete interface, console, network, and loudspeaker signal path before passing live audio. See the [full disclaimer](DISCLAIMER.md).
 
+## Download
+
+### [Download DeFeedback Live 0.4.0 for Apple Silicon →](https://github.com/rjstudiosaustralia/DeFeedback/releases/download/v0.4.0/DeFeedback-Live-0.4.0-adhoc-arm64.zip)
+
+Or visit the [Latest release page](https://github.com/rjstudiosaustralia/DeFeedback/releases/latest) for release notes and the SHA-256 checksum.
+
+1. Download and unzip `DeFeedback-Live-0.4.0-adhoc-arm64.zip`.
+2. Move `DeFeedback Live.app` to the Applications folder.
+3. Install and activate the Alpha Labs De-Feedback Audio Unit separately.
+4. Open DeFeedback Live and begin with `MUTE ALL OUTPUTS` engaged.
+
+The current preview is ad-hoc signed but not Apple-notarized. If macOS blocks the first launch, try opening the app once, then go to **System Settings → Privacy & Security** and use **Open Anyway** only if you downloaded it from this official release. See [Apple's safety guidance](https://support.apple.com/en-au/102445).
+
+Supported runtime: Apple Silicon and macOS 13 or newer. Intel Macs are not supported.
+
 ## Current status
 
 Version `0.4.0` is a working engineering preview:
