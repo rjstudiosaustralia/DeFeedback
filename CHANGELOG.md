@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1 — 2026-09-01
+
+- Fixed browser Mute and Bypass controls remaining visually stale after a click kept keyboard focus inside a lane.
+- Added immediate red/yellow lane feedback while commands are being accepted, followed by authoritative state reconciliation from the Mac.
+- Published plugin Mute and routing changes immediately instead of waiting for the next periodic status update.
+- Added pressed-state accessibility metadata to browser Mute and Bypass buttons.
+- Isolated the UI QA app's instance identity and LAN port so it can run beside an installed DeFeedback Live instance without affecting live audio.
+
 ## 0.5.0 — 2026-09-01
 
 - Added an optional responsive full-control LAN browser interface, disabled by default.

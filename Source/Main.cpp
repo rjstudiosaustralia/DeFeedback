@@ -44,7 +44,14 @@ private:
 class Application final : public juce::JUCEApplication
 {
 public:
-    const juce::String getApplicationName() override { return "DeFeedback Live"; }
+    const juce::String getApplicationName() override
+    {
+       #if DEFEEDBACK_UI_PREVIEW
+        return "DeFeedback Live QA";
+       #else
+        return "DeFeedback Live";
+       #endif
+    }
     const juce::String getApplicationVersion() override { return JUCE_APPLICATION_VERSION_STRING; }
     bool moreThanOneInstanceAllowed() override { return false; }
 

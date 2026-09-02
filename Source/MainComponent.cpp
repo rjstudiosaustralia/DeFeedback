@@ -28,6 +28,7 @@ AppConfig loadInitialConfig (SettingsStore& settings)
     preview.launchAtLogin = false;
     preview.remoteControlEnabled = true;
     preview.remoteAccessCode = "12345678";
+    preview.remoteControlPort = 8766;
     preview.lanes.clear();
     preview.lanes.add ({ 1, "Lead Vocal", 0, 0, false, {}, false, {} });
     preview.lanes.add ({ 2, "Guest Vocal", 1, 1, false, {}, false, {} });
@@ -901,7 +902,16 @@ void MainComponent::rebuildLaneRows()
         };
         row->onPluginMuteChanged = [this] (int lane, bool muted)
         {
+           #if DEFEEDBACK_UI_PREVIEW
+            const auto laneId = config.lanes[lane].id;
+            if (muted)
+                previewMutedLaneIds.addIfNotAlreadyThere (laneId);
+            else
+                previewMutedLaneIds.removeAllInstancesOf (laneId);
+            updateRuntimeStatus();
+           #else
             engine.setLanePluginMuted (lane, muted);
+           #endif
         };
         row->onRemove = [this] (int lane)
         {
@@ -978,6 +988,7 @@ bool MainComponent::applyLaneConfiguration (const juce::Array<LaneConfig>& updat
     rebuildLaneRows();
     if (successMessage.isNotEmpty())
         showMessage (successMessage, false);
+    updateRuntimeStatus();
     saveConfig();
     return true;
    #endif
@@ -1103,12 +1114,12 @@ void MainComponent::updateRuntimeStatus()
     for (int index = 0; index < laneRows.size(); ++index)
     {
         LaneStatus status;
-        status.text = index == 3 ? "INVALID ROUTE" : (index == 2 ? "BYPASSED - dry pass" : "PROCESSED");
-        status.isDryFallback = index >= 2;
+        status.text = index == 3 ? "INVALID ROUTE" : (config.lanes[index].dry ? "BYPASSED - dry pass" : "PROCESSED");
+        status.isDryFallback = config.lanes[index].dry || index == 3;
         status.editorAvailable = true;
         status.strengthAvailable = true;
         status.pluginMuteAvailable = true;
-        status.pluginMuted = index == 1;
+        status.pluginMuted = previewMutedLaneIds.contains (config.lanes[index].id);
         status.strengthNormalized = index == 0 ? 0.53f : (index == 1 ? 0.75f : (index == 2 ? 0.72f : 1.0f));
         status.inputPeak = index == 0 ? 0.55f : 0.25f;
         status.outputPeak = status.pluginMuted || index == 3 ? 0.0f : 0.35f;
@@ -1594,9 +1605,18 @@ void MainComponent::handleRemoteCommand (const juce::var& command)
         const auto index = findLaneIndexById (static_cast<int> (command.getProperty ("id", -1)));
         if (! juce::isPositiveAndBelow (index, config.lanes.size()))
             return;
-       #if ! DEFEEDBACK_UI_PREVIEW
+        const auto shouldMute = static_cast<bool> (command.getProperty ("muted", true));
+       #if DEFEEDBACK_UI_PREVIEW
+        const auto laneId = config.lanes[index].id;
+        if (shouldMute)
+            previewMutedLaneIds.addIfNotAlreadyThere (laneId);
+        else
+            previewMutedLaneIds.removeAllInstancesOf (laneId);
+        updateRuntimeStatus();
+       #else
         engine.setLanePluginMuted (index,
-                                   static_cast<bool> (command.getProperty ("muted", true)));
+                                   shouldMute);
+        updateRuntimeStatus();
         saveConfig();
        #endif
     }

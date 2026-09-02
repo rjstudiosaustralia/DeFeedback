@@ -94,6 +94,7 @@ private:
     double remoteActionMessageExpiresAtMs = 0.0;
    #if DEFEEDBACK_UI_PREVIEW
     bool previewEngineRunning = true;
+    juce::Array<int> previewMutedLaneIds { 2 };
    #endif
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)

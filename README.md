@@ -12,11 +12,11 @@ It is deliberately not a general-purpose DAW. The operator selects one Core Audi
 
 ## Download
 
-### [Download DeFeedback Live 0.5.0 for Apple Silicon →](https://github.com/rjstudiosaustralia/DeFeedback/releases/download/v0.5.0/DeFeedback-Live-0.5.0-adhoc-arm64.zip)
+### [Download DeFeedback Live 0.5.1 for Apple Silicon →](https://github.com/rjstudiosaustralia/DeFeedback/releases/download/v0.5.1/DeFeedback-Live-0.5.1-adhoc-arm64.zip)
 
 Or visit the [Latest release page](https://github.com/rjstudiosaustralia/DeFeedback/releases/latest) for release notes and the SHA-256 checksum.
 
-1. Download and unzip `DeFeedback-Live-0.5.0-adhoc-arm64.zip`.
+1. Download and unzip `DeFeedback-Live-0.5.1-adhoc-arm64.zip`.
 2. Move `DeFeedback Live.app` to the Applications folder.
 3. Install and activate the Alpha Labs De-Feedback Audio Unit separately.
 4. Open DeFeedback Live and begin with `MUTE ALL OUTPUTS` engaged.
@@ -27,7 +27,7 @@ Supported runtime: Apple Silicon and macOS 13 or newer. Intel Macs are not suppo
 
 ## Current status
 
-Version `0.5.0` is a working engineering preview:
+Version `0.5.1` is a working engineering preview:
 
 - arm64-only macOS application;
 - AUv2 hosting for De-Feedback 1.1.4 (`aufx/FbTI/jDSP`);
@@ -53,6 +53,7 @@ Version `0.5.0` is a working engineering preview:
 - optional auto-start and native macOS launch-at-login;
 - an optional responsive LAN browser remote, disabled by default;
 - authenticated full control of devices, rate, buffer, engine, output mute, lanes, routing, Strength, plugin Mute, bypass, meters, and XRuns;
+- immediate browser feedback and authoritative live reconciliation for plugin Mute and bypass;
 - a persistent eight-digit access code for monitor-free launch-at-login operation; and
 - duplicate-route prevention in both native and browser controls, with server-side validation.
 
