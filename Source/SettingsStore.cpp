@@ -1,5 +1,9 @@
 #include "SettingsStore.h"
 
+#if JUCE_MAC
+ #include <sys/stat.h>
+#endif
+
 namespace defeedback
 {
 SettingsStore::SettingsStore()
@@ -48,6 +52,14 @@ bool SettingsStore::save (const AppConfig& config, juce::String& error) const
         error = "Could not atomically replace settings.xml.";
         return false;
     }
+
+   #if JUCE_MAC
+    if (::chmod (settingsFile.getFullPathName().toRawUTF8(), S_IRUSR | S_IWUSR) != 0)
+    {
+        error = "Settings were saved, but their file permissions could not be restricted to this user.";
+        return false;
+    }
+   #endif
 
     return true;
 }

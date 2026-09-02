@@ -12,11 +12,11 @@ It is deliberately not a general-purpose DAW. The operator selects one Core Audi
 
 ## Download
 
-### [Download DeFeedback Live 0.4.0 for Apple Silicon →](https://github.com/rjstudiosaustralia/DeFeedback/releases/download/v0.4.0/DeFeedback-Live-0.4.0-adhoc-arm64.zip)
+### [Download DeFeedback Live 0.5.0 for Apple Silicon →](https://github.com/rjstudiosaustralia/DeFeedback/releases/download/v0.5.0/DeFeedback-Live-0.5.0-adhoc-arm64.zip)
 
 Or visit the [Latest release page](https://github.com/rjstudiosaustralia/DeFeedback/releases/latest) for release notes and the SHA-256 checksum.
 
-1. Download and unzip `DeFeedback-Live-0.4.0-adhoc-arm64.zip`.
+1. Download and unzip `DeFeedback-Live-0.5.0-adhoc-arm64.zip`.
 2. Move `DeFeedback Live.app` to the Applications folder.
 3. Install and activate the Alpha Labs De-Feedback Audio Unit separately.
 4. Open DeFeedback Live and begin with `MUTE ALL OUTPUTS` engaged.
@@ -27,11 +27,11 @@ Supported runtime: Apple Silicon and macOS 13 or newer. Intel Macs are not suppo
 
 ## Current status
 
-Version `0.4.0` is a working engineering preview:
+Version `0.5.0` is a working engineering preview:
 
 - arm64-only macOS application;
 - AUv2 hosting for De-Feedback 1.1.4 (`aufx/FbTI/jDSP`);
-- one Core Audio input/output pair at a time;
+- one Core Audio input/output device at a time;
 - independent mono lanes with no fixed application cap;
 - lane capacity determined by the selected device's unassigned input/output pairs;
 - arbitrary input-to-output routing;
@@ -50,7 +50,11 @@ Version `0.4.0` is a working engineering preview:
 - automatic dry pass when a plugin instance cannot load;
 - a real-time global output mute after processing;
 - atomic setup and plugin-state persistence;
-- optional auto-start and native macOS launch-at-login.
+- optional auto-start and native macOS launch-at-login;
+- an optional responsive LAN browser remote, disabled by default;
+- authenticated full control of devices, rate, buffer, engine, output mute, lanes, routing, Strength, plugin Mute, bypass, meters, and XRuns;
+- a persistent eight-digit access code for monitor-free launch-at-login operation; and
+- duplicate-route prevention in both native and browser controls, with server-side validation.
 
 The app has been compiled and exercised on an M1 Max with the installed De-Feedback 1.1.4 demo. Multi-lane reliability and the practical CPU ceiling still need to be qualified on the target DVS, RME Digiface, and Focusrite RedNet TNX systems. Removing the software cap does not imply that every lane count is real-time safe. See [Hardware validation](docs/HARDWARE_VALIDATION.md).
 
@@ -69,6 +73,19 @@ The rack displays an amber full-width warning whenever dry pass is active becaus
 The per-lane `PLUGIN MUTE` checkbox is De-Feedback's own parameter and is saved inside that AU instance. `BYPASS` skips the plugin and passes dry audio. The master output mute intentionally does not alter those plugin checkboxes; instead every lane turns red and reports `OUTPUT MUTED`, preserving each plugin's state for immediate unmute.
 
 A hard in-process AUv2 crash can still terminate the host before it can choose a fallback. True crash isolation requires a different plugin format or a multi-process bridge and is not claimed in this release.
+
+## LAN remote and headless use
+
+Enable `Enable full-control LAN remote` in the Mac app, then use `COPY DETAILS` to copy the displayed LAN address and eight-digit access code. The setting and code persist across restarts so a Mac configured with `Launch at login` can be controlled without a connected monitor after its user session has logged in. The server starts even when the saved audio device is unavailable, allowing the browser to refresh and select a newly connected interface.
+
+The browser mirrors the operational host controls: Core Audio device refresh/selection, sample rate, buffer, engine start/stop, master mute/unmute, auto-start, launch-at-login, lane add/remove/name/routing, Strength, plugin Mute, bypass, meters, CPU/latency/XRuns, and XRun reset. Native Audio Unit editor windows cannot be embedded in a browser; the exposed De-Feedback Strength and Mute parameters remain available remotely.
+
+The remote is deliberately local and self-contained: the app serves its own page and does not require internet or a cloud account. It listens on TCP port `8765` on the Mac's active network interfaces only while enabled. Access requires the saved code, authenticated sessions are invalidated when the remote is disabled or the code is regenerated, and the settings file is restricted to the current macOS user.
+
+> [!WARNING]
+> The current preview uses ordinary HTTP, not encrypted HTTPS. Use it only on a trusted private production network or isolated control VLAN. Do not expose port `8765` to the internet, forward it through a router, or use the remote across public/shared Wi-Fi. Anyone who obtains the access code or an active session has full live-audio control, including engine start and output unmute. See [Remote control](docs/REMOTE_CONTROL.md) for setup, recovery, and validation details.
+
+`Launch at login` is a normal macOS login item, not a system daemon. After a reboot, a user must complete macOS/FileVault login before the app and remote can start. For a monitor-free machine, reserve its IP address in DHCP or assign a stable control-network address, prevent automatic sleep, and retain Screen Sharing or physical access as a recovery path.
 
 ## Runtime requirements
 

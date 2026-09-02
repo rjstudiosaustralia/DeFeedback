@@ -26,6 +26,9 @@ struct AppConfig
     int bufferSize = 64;
     bool autoStart = true;
     bool launchAtLogin = true;
+    bool remoteControlEnabled = false;
+    int remoteControlPort = 8765;
+    juce::String remoteAccessCode;
     juce::String mainWindowState;
     juce::Array<LaneConfig> lanes;
 

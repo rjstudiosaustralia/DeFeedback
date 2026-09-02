@@ -16,3 +16,5 @@ Live audio systems can produce sudden and dangerous sound levels. Before passing
 - keep a qualified operator in control of an independent hardware or console mute.
 
 No software mute should be treated as the only emergency safety control.
+
+The optional LAN remote provides authenticated full control, including engine start and master-output unmute. Its current HTTP transport is not encrypted. Use it only on a trusted private network or isolated control VLAN; never expose its port to the internet or an untrusted/shared network. Anyone who obtains the access code or an active session can change live-audio state. Network authentication and browser confirmation dialogs do not replace a qualified operator or independent hardware safety control.

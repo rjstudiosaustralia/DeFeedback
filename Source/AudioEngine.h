@@ -75,6 +75,7 @@ public:
     void restorePluginWindows();
     void setLaneStrength (int laneIndex, float normalizedValue);
     void setLanePluginMuted (int laneIndex, bool shouldMute);
+    void setLaneName (int laneIndex, const juce::String& name);
 
 private:
     struct LaneRuntime

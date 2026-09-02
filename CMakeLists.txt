@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(DeFeedbackLive VERSION 0.4.0 LANGUAGES C CXX OBJC OBJCXX)
+project(DeFeedbackLive VERSION 0.5.0 LANGUAGES C CXX OBJC OBJCXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,6 +41,7 @@ target_sources(DeFeedbackLive PRIVATE
     Source/MeterProcessor.cpp
     Source/PluginRegistration.mm
     Source/PluginWindow.cpp
+    Source/RemoteControlServer.cpp
     Source/SettingsStore.cpp)
 
 target_compile_definitions(DeFeedbackLive PRIVATE

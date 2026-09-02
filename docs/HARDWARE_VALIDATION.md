@@ -12,6 +12,9 @@ A configuration is considered show-ready only when all of the following pass:
 - device power-cycle causes a clear stopped/error state and recovers without unexpected output;
 - no unprocessed parallel path exists in the interface, Dante, or console routing;
 - trial mode is replaced by a valid live licence.
+- the disabled LAN remote leaves TCP `8765` closed;
+- remote reconnect, device refresh, lane editing, engine stop/start, and master mute/unmute behave correctly; and
+- losing the browser or control network does not interrupt audio or change the last commanded state.
 
 ## Development baseline
 
@@ -47,3 +50,6 @@ Record one row for each test. Do not infer untested lane counts.
 8. Open every editor, move windows, and adjust strength while observing XRuns.
 9. Run the final lane count for eight hours while muted.
 10. Repeat with console/interface returns connected at show gain only after the muted tests pass.
+11. Reboot and log in with the display disconnected, then verify launch-at-login and remote authentication from the reserved control address.
+12. Disconnect/reconnect the control client and network while audio runs; confirm CPU/XRuns and output state remain stable.
+13. Attempt duplicate browser routes and incorrect access codes; confirm routes remain exclusive and authentication is rate-limited.

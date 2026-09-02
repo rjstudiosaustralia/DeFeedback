@@ -26,6 +26,8 @@ AppConfig loadInitialConfig (SettingsStore& settings)
     AppConfig preview;
     preview.autoStart = false;
     preview.launchAtLogin = false;
+    preview.remoteControlEnabled = true;
+    preview.remoteAccessCode = "12345678";
     preview.lanes.clear();
     preview.lanes.add ({ 1, "Lead Vocal", 0, 0, false, {}, false, {} });
     preview.lanes.add ({ 2, "Guest Vocal", 1, 1, false, {}, false, {} });
@@ -440,7 +442,9 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
             "De-Feedback is separately installed and licensed.\n\n"
             "Engineering preview supplied without warranty. Use entirely at your own risk. "
             "Live feedback and routing errors can cause dangerous sound levels, hearing injury, or equipment damage. "
-            "Begin muted, verify every route, and retain an independent hardware or console mute.");
+            "Begin muted, verify every route, and retain an independent hardware or console mute.\n\n"
+            "The optional LAN remote has full live-audio control and uses unencrypted HTTP. "
+            "Enable it only on a trusted private network; never expose TCP port 8765 to the internet or shared Wi-Fi.");
     };
     addAndMakeVisible (aboutButton);
 
@@ -526,51 +530,7 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
     };
     addAndMakeVisible (resetXRunsButton);
 
-    addLaneButton.onClick = [this]
-    {
-       #if DEFEEDBACK_UI_PREVIEW
-        const auto inputChannelCount = previewChannelCount;
-        const auto outputChannelCount = previewChannelCount;
-       #else
-        const auto inputChannelCount = engine.getInputChannelNames().size();
-        const auto outputChannelCount = engine.getOutputChannelNames().size();
-       #endif
-
-        const auto findFirstUnusedChannel = [this] (int channelCount, bool input)
-        {
-            for (int channel = 0; channel < channelCount; ++channel)
-            {
-                auto used = false;
-                for (const auto& lane : config.lanes)
-                    used = used || (input ? lane.inputChannel : lane.outputChannel) == channel;
-
-                if (! used)
-                    return channel;
-            }
-
-            return -1;
-        };
-
-        const auto inputChannel = findFirstUnusedChannel (inputChannelCount, true);
-        const auto outputChannel = findFirstUnusedChannel (outputChannelCount, false);
-
-        if (inputChannel < 0 || outputChannel < 0)
-        {
-            showMessage (inputChannelCount == 0 || outputChannelCount == 0
-                             ? "Select a Core Audio device with both input and output channels first."
-                             : "Every available input/output pair already has a lane.",
-                         true);
-            return;
-        }
-
-        auto id = 1;
-        for (const auto& lane : config.lanes)
-            id = juce::jmax (id, lane.id + 1);
-
-        config.lanes.add ({ id, "Vocal " + juce::String (id), inputChannel, outputChannel, false, {}, false, {} });
-        rebuildLaneRows();
-        applyLanes();
-    };
+    addLaneButton.onClick = [this] { addLane(); };
     addAndMakeVisible (addLaneButton);
     addLaneButton.setTooltip ("Add the next unused input/output pair. Capacity follows the selected Core Audio device.");
 
@@ -598,6 +558,68 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
         saveConfig();
     };
     addAndMakeVisible (launchAtLoginToggle);
+
+    remoteControlToggle.setToggleState (config.remoteControlEnabled, juce::dontSendNotification);
+    remoteControlToggle.setTooltip ("Expose full control on the local network. Access requires the saved eight-digit code.");
+    remoteControlToggle.onClick = [this]
+    {
+        const auto shouldEnable = remoteControlToggle.getToggleState();
+        if (shouldEnable)
+        {
+            if (config.remoteAccessCode.isEmpty())
+                config.remoteAccessCode = RemoteControlServer::generateAccessCode();
+
+            config.remoteControlEnabled = startRemoteControl();
+            remoteControlToggle.setToggleState (config.remoteControlEnabled, juce::dontSendNotification);
+        }
+        else
+        {
+            config.remoteControlEnabled = false;
+            stopRemoteControl();
+            showMessage ("Full-control LAN remote disabled.", false);
+        }
+
+        updateRemoteControls();
+        saveConfig();
+    };
+    addAndMakeVisible (remoteControlToggle);
+
+    remoteStatusLabel.setColour (juce::Label::textColourId, mutedText);
+    remoteStatusLabel.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+    remoteStatusLabel.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (remoteStatusLabel);
+
+    copyRemoteButton.setTooltip ("Copy the LAN address and access code to the clipboard.");
+    copyRemoteButton.onClick = [this]
+    {
+        const auto urls = remoteControlServer.getDisplayUrls();
+        if (urls.isEmpty())
+        {
+            showMessage ("Enable the LAN remote before copying its connection details.", true);
+            return;
+        }
+
+        juce::SystemClipboard::copyTextToClipboard (urls[0] + "\nAccess code: " + config.remoteAccessCode);
+        showMessage ("Remote address and access code copied.", false);
+    };
+    addAndMakeVisible (copyRemoteButton);
+
+    newRemoteCodeButton.setTooltip ("Generate a new saved access code and disconnect every browser session.");
+    newRemoteCodeButton.onClick = [this]
+    {
+        config.remoteAccessCode = RemoteControlServer::generateAccessCode();
+        auto restartSucceeded = true;
+        if (config.remoteControlEnabled)
+        {
+            restartSucceeded = startRemoteControl();
+            config.remoteControlEnabled = restartSucceeded;
+        }
+        updateRemoteControls();
+        saveConfig();
+        if (restartSucceeded)
+            showMessage ("New LAN remote access code generated. Existing browser sessions were disconnected.", false);
+    };
+    addAndMakeVisible (newRemoteCodeButton);
 
     metricsLabel.setJustificationType (juce::Justification::centredRight);
     metricsLabel.setColour (juce::Label::textColourId, text);
@@ -637,6 +659,14 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
     rebuildLaneRows();
     updateRuntimeStatus();
 
+    if (config.remoteControlEnabled)
+    {
+        if (config.remoteAccessCode.isEmpty())
+            config.remoteAccessCode = RemoteControlServer::generateAccessCode();
+        config.remoteControlEnabled = startRemoteControl();
+    }
+    updateRemoteControls();
+
     if (! safeLaunch
         && config.launchAtLogin
         && getLoginItemStatus() == LoginItemStatus::disabled)
@@ -647,9 +677,7 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
     }
 
     setSize (1360, 760);
-   #if ! DEFEEDBACK_UI_PREVIEW
     startTimerHz (10);
-   #endif
 
     if (config.autoStart && ! safeLaunch)
     {
@@ -664,6 +692,7 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
 MainComponent::~MainComponent()
 {
     stopTimer();
+    stopRemoteControl();
    #if ! DEFEEDBACK_UI_PREVIEW
     engine.removeChangeListener (this);
     saveConfig();
@@ -677,7 +706,7 @@ void MainComponent::paint (juce::Graphics& g)
 {
     g.fillAll (background);
 
-    auto topPanel = juce::Rectangle<int> (20, 76, getWidth() - 40, 146).toFloat();
+    auto topPanel = juce::Rectangle<int> (20, 76, getWidth() - 40, 196).toFloat();
     g.setColour (panel);
     g.fillRoundedRectangle (topPanel, 8.0f);
     g.setColour (border);
@@ -693,7 +722,7 @@ void MainComponent::resized()
     subtitleLabel.setBounds (heading);
     area.removeFromTop (10);
 
-    auto setupPanel = area.removeFromTop (146).reduced (16, 12);
+    auto setupPanel = area.removeFromTop (196).reduced (16, 12);
     auto firstLine = setupPanel.removeFromTop (54);
 
     auto deviceArea = firstLine.removeFromLeft (300);
@@ -732,6 +761,11 @@ void MainComponent::resized()
     metricsLabel.setBounds (secondLine);
 
     pluginLabel.setBounds (setupPanel.removeFromTop (24));
+    auto remoteLine = setupPanel.removeFromTop (42);
+    remoteControlToggle.setBounds (remoteLine.removeFromLeft (225));
+    newRemoteCodeButton.setBounds (remoteLine.removeFromRight (90).reduced (2, 5));
+    copyRemoteButton.setBounds (remoteLine.removeFromRight (112).reduced (2, 5));
+    remoteStatusLabel.setBounds (remoteLine.reduced (8, 0));
     area.removeFromTop (10);
     alertLabel.setBounds (area.removeFromTop (34));
     area.removeFromTop (8);
@@ -765,6 +799,8 @@ void MainComponent::refreshAllControls()
 {
     autoStartToggle.setToggleState (config.autoStart, juce::dontSendNotification);
     launchAtLoginToggle.setToggleState (config.launchAtLogin, juce::dontSendNotification);
+    remoteControlToggle.setToggleState (config.remoteControlEnabled, juce::dontSendNotification);
+    updateRemoteControls();
     refreshDeviceControls();
    #if DEFEEDBACK_UI_PREVIEW
     pluginLabel.setText ("ISOLATED UI PREVIEW - NO CORE AUDIO DEVICE IS OPEN", juce::dontSendNotification);
@@ -781,15 +817,21 @@ void MainComponent::refreshDeviceControls()
     const juce::ScopedValueSetter<bool> guard (refreshingControls, true);
 
    #if DEFEEDBACK_UI_PREVIEW
+    deviceChoices.clear();
+    deviceChoices.add ({ "Dante Virtual Soundcard", "Dante Virtual Soundcard", "Dante Virtual Soundcard" });
     deviceCombo.clear (juce::dontSendNotification);
     deviceCombo.addItem ("Dante Virtual Soundcard", 1);
     deviceCombo.setSelectedId (1, juce::dontSendNotification);
     rateCombo.clear (juce::dontSendNotification);
     rateCombo.addItem ("48.0 kHz", 1);
     rateCombo.setSelectedId (1, juce::dontSendNotification);
+    sampleRates.clear();
+    sampleRates.add (48000.0);
     bufferCombo.clear (juce::dontSendNotification);
     bufferCombo.addItem ("512 samples", 1);
     bufferCombo.setSelectedId (1, juce::dontSendNotification);
+    bufferSizes.clear();
+    bufferSizes.add (512);
    #else
     deviceChoices = engine.getDeviceChoices();
     deviceCombo.clear (juce::dontSendNotification);
@@ -869,9 +911,9 @@ void MainComponent::rebuildLaneRows()
                 return;
             }
 
-            config.lanes.remove (lane);
-            rebuildLaneRows();
-            applyLanes();
+            auto updated = config.lanes;
+            updated.remove (lane);
+            applyLaneConfiguration (updated, "Lane removed.");
         };
         laneContainer.addAndMakeVisible (row);
     }
@@ -895,27 +937,103 @@ void MainComponent::applyLanes()
         updated.add (std::move (lane));
     }
 
-    if (const auto routeError = validateExclusiveRoutes (updated); routeError.isNotEmpty())
-    {
-        showMessage (routeError + " Selection reverted.", true);
+    if (! applyLaneConfiguration (updated, {}))
         juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
         {
             if (safe != nullptr)
                 safe->rebuildLaneRows();
         });
-        return;
+}
+
+bool MainComponent::applyLaneConfiguration (const juce::Array<LaneConfig>& updated,
+                                            const juce::String& successMessage)
+{
+    if (updated.isEmpty())
+    {
+        showMessage ("At least one lane must remain in the rack.", true);
+        return false;
     }
 
-    config.lanes = std::move (updated);
+    if (const auto routeError = validateExclusiveRoutes (updated); routeError.isNotEmpty())
+    {
+        showMessage (routeError + " Selection reverted.", true);
+        return false;
+    }
+
+    config.lanes = updated;
    #if DEFEEDBACK_UI_PREVIEW
+    rebuildLaneRows();
+    if (successMessage.isNotEmpty())
+        showMessage (successMessage, false);
     updateRuntimeStatus();
-    return;
+    return true;
    #else
     const auto error = engine.setLanes (config.lanes);
     if (error.isNotEmpty())
+    {
         showMessage (error, true);
+        return false;
+    }
+
+    rebuildLaneRows();
+    if (successMessage.isNotEmpty())
+        showMessage (successMessage, false);
     saveConfig();
+    return true;
    #endif
+}
+
+void MainComponent::addLane()
+{
+   #if DEFEEDBACK_UI_PREVIEW
+    const auto inputChannelCount = previewChannelCount;
+    const auto outputChannelCount = previewChannelCount;
+   #else
+    const auto inputChannelCount = engine.getInputChannelNames().size();
+    const auto outputChannelCount = engine.getOutputChannelNames().size();
+   #endif
+
+    const auto findFirstUnusedChannel = [this] (int channelCount, bool input)
+    {
+        for (int channel = 0; channel < channelCount; ++channel)
+        {
+            auto used = false;
+            for (const auto& lane : config.lanes)
+                used = used || (input ? lane.inputChannel : lane.outputChannel) == channel;
+
+            if (! used)
+                return channel;
+        }
+
+        return -1;
+    };
+
+    const auto inputChannel = findFirstUnusedChannel (inputChannelCount, true);
+    const auto outputChannel = findFirstUnusedChannel (outputChannelCount, false);
+    if (inputChannel < 0 || outputChannel < 0)
+    {
+        showMessage (inputChannelCount == 0 || outputChannelCount == 0
+                         ? "Select a Core Audio device with both input and output channels first."
+                         : "Every available input/output pair already has a lane.",
+                     true);
+        return;
+    }
+
+    auto id = 1;
+    for (const auto& lane : config.lanes)
+        id = juce::jmax (id, lane.id + 1);
+
+    auto updated = config.lanes;
+    updated.add ({ id, "Vocal " + juce::String (id), inputChannel, outputChannel, false, {}, false, {} });
+    applyLaneConfiguration (updated, "Lane added on the next unused input/output pair.");
+}
+
+int MainComponent::findLaneIndexById (int id) const
+{
+    for (int index = 0; index < config.lanes.size(); ++index)
+        if (config.lanes[index].id == id)
+            return index;
+    return -1;
 }
 
 void MainComponent::saveConfig()
@@ -951,6 +1069,9 @@ void MainComponent::showMessage (const juce::String& message, bool isError)
     alertLabel.setColour (juce::Label::backgroundColourId,
                           isError ? juce::Colour (0xff5b2528) : juce::Colour (0xff173d2e));
     alertLabel.setColour (juce::Label::textColourId, isError ? juce::Colour (0xffffc4c5) : juce::Colour (0xffaaf0cc));
+    remoteActionMessage = message;
+    remoteActionError = isError;
+    remoteActionMessageExpiresAtMs = juce::Time::getMillisecondCounterHiRes() + 5000.0;
 }
 
 void MainComponent::startOrStop()
@@ -1088,6 +1209,423 @@ void MainComponent::updateRuntimeStatus()
         alertLabel.setText ("ALL LANES PROCESSING", juce::dontSendNotification);
         alertLabel.setColour (juce::Label::backgroundColourId, juce::Colour (0xff173d2e));
         alertLabel.setColour (juce::Label::textColourId, juce::Colour (0xffaaf0cc));
+    }
+
+    if (remoteControlServer.isListening())
+        publishRemoteState (statuses, engineRunning, masterMuted);
+}
+
+bool MainComponent::startRemoteControl()
+{
+    juce::String error;
+    const auto started = remoteControlServer.startServer (
+        config.remoteControlPort,
+        config.remoteAccessCode,
+        [safe = juce::Component::SafePointer<MainComponent> (this)] (const juce::var& command)
+        {
+            const auto commandCopy = command;
+            juce::MessageManager::callAsync ([safe, commandCopy]
+            {
+                if (safe != nullptr)
+                    safe->handleRemoteCommand (commandCopy);
+            });
+        },
+        error);
+
+    if (! started)
+    {
+        showMessage ("LAN remote: " + error, true);
+        return false;
+    }
+
+    showMessage ("Full-control LAN remote enabled. Use only on a trusted private network.", false);
+    updateRuntimeStatus();
+    return true;
+}
+
+void MainComponent::stopRemoteControl()
+{
+    remoteControlServer.stopServer();
+    updateRemoteControls();
+}
+
+void MainComponent::updateRemoteControls()
+{
+    const auto listening = remoteControlServer.isListening();
+    remoteControlToggle.setToggleState (config.remoteControlEnabled && listening,
+                                        juce::dontSendNotification);
+    copyRemoteButton.setEnabled (listening);
+    newRemoteCodeButton.setEnabled (config.remoteControlEnabled || config.remoteAccessCode.isNotEmpty());
+
+    if (listening)
+    {
+        const auto urls = remoteControlServer.getDisplayUrls();
+        remoteStatusLabel.setText ("FULL CONTROL  |  " + urls.joinIntoString ("  /  ")
+                                       + "  |  ACCESS CODE " + config.remoteAccessCode,
+                                   juce::dontSendNotification);
+        remoteStatusLabel.setColour (juce::Label::textColourId, green);
+    }
+    else
+    {
+        remoteStatusLabel.setText ("LAN REMOTE OFF  |  No network control is listening",
+                                   juce::dontSendNotification);
+        remoteStatusLabel.setColour (juce::Label::textColourId, mutedText);
+    }
+}
+
+void MainComponent::publishRemoteState (const juce::Array<LaneStatus>& statuses,
+                                        bool engineRunning,
+                                        bool masterMuted)
+{
+    auto root = std::make_unique<juce::DynamicObject>();
+    root->setProperty ("version", JUCE_APPLICATION_VERSION_STRING);
+    root->setProperty ("engineRunning", engineRunning);
+    root->setProperty ("masterMuted", masterMuted);
+    root->setProperty ("autoStart", config.autoStart);
+    root->setProperty ("launchAtLogin", config.launchAtLogin);
+
+   #if DEFEEDBACK_UI_PREVIEW
+    root->setProperty ("latencyMs", 4.0);
+    root->setProperty ("cpuPercent", 54.9);
+    root->setProperty ("xruns", 0);
+    root->setProperty ("pluginDiagnostic", "Isolated UI preview - simulated De-Feedback instances");
+   #else
+    root->setProperty ("latencyMs", engine.getEstimatedRoundTripMilliseconds());
+    root->setProperty ("cpuPercent", engine.getCpuUsage() * 100.0);
+    root->setProperty ("xruns", engine.getXRunCount());
+    root->setProperty ("pluginDiagnostic", engine.getPluginDiagnostic());
+   #endif
+
+    const auto hasRecentAction = remoteActionMessage.isNotEmpty()
+                              && juce::Time::getMillisecondCounterHiRes() < remoteActionMessageExpiresAtMs;
+    const auto runtimeMessage = alertLabel.getText();
+    const auto runtimeIsCritical = masterMuted
+                                || runtimeMessage.containsIgnoreCase ("routing error")
+                                || runtimeMessage.containsIgnoreCase ("plugin mute")
+                                || runtimeMessage.containsIgnoreCase ("bypass");
+    const auto showRecentAction = hasRecentAction && (remoteActionError || ! runtimeIsCritical);
+    root->setProperty ("message", showRecentAction ? remoteActionMessage : runtimeMessage);
+    root->setProperty ("messageError", showRecentAction
+                                         ? remoteActionError
+                                         : (masterMuted
+                                            || runtimeMessage.containsIgnoreCase ("error")
+                                            || runtimeMessage.containsIgnoreCase ("plugin mute")));
+
+    juce::Array<juce::var> devices;
+    for (const auto& device : deviceChoices)
+        devices.add (device.displayName);
+    root->setProperty ("devices", devices);
+
+    auto selectedDevice = -1;
+   #if DEFEEDBACK_UI_PREVIEW
+    selectedDevice = 0;
+   #else
+    const auto currentDevice = engine.getCurrentDeviceChoice();
+    for (int index = 0; index < deviceChoices.size(); ++index)
+        if (deviceChoices[index].inputName == currentDevice.inputName
+            && deviceChoices[index].outputName == currentDevice.outputName)
+            selectedDevice = index;
+   #endif
+    root->setProperty ("selectedDevice", selectedDevice);
+
+    juce::Array<juce::var> rates;
+    for (const auto rate : sampleRates)
+        rates.add (rate);
+    root->setProperty ("sampleRates", rates);
+
+    juce::Array<juce::var> buffers;
+    for (const auto size : bufferSizes)
+        buffers.add (size);
+    root->setProperty ("bufferSizes", buffers);
+
+   #if DEFEEDBACK_UI_PREVIEW
+    root->setProperty ("selectedSampleRate", 48000.0);
+    root->setProperty ("selectedBufferSize", 512);
+   #else
+    root->setProperty ("selectedSampleRate", engine.getCurrentSampleRate());
+    root->setProperty ("selectedBufferSize", engine.getCurrentBufferSize());
+   #endif
+
+    juce::StringArray inputNames;
+    juce::StringArray outputNames;
+   #if DEFEEDBACK_UI_PREVIEW
+    for (int channel = 0; channel < previewChannelCount; ++channel)
+    {
+        inputNames.add ("Input " + juce::String (channel + 1));
+        outputNames.add ("Output " + juce::String (channel + 1));
+    }
+   #else
+    inputNames = engine.getInputChannelNames();
+    outputNames = engine.getOutputChannelNames();
+   #endif
+
+    juce::Array<juce::var> inputs;
+    for (const auto& name : inputNames)
+        inputs.add (name);
+    root->setProperty ("inputChannels", inputs);
+
+    juce::Array<juce::var> outputs;
+    for (const auto& name : outputNames)
+        outputs.add (name);
+    root->setProperty ("outputChannels", outputs);
+    root->setProperty ("capacity", juce::jmin (inputNames.size(), outputNames.size()));
+
+    juce::Array<juce::var> lanes;
+    for (int index = 0; index < config.lanes.size(); ++index)
+    {
+        const auto& lane = config.lanes[index];
+        const auto status = juce::isPositiveAndBelow (index, statuses.size())
+                          ? statuses[index]
+                          : LaneStatus {};
+        auto laneObject = std::make_unique<juce::DynamicObject>();
+        laneObject->setProperty ("id", lane.id);
+        laneObject->setProperty ("name", lane.name);
+        laneObject->setProperty ("inputChannel", lane.inputChannel);
+        laneObject->setProperty ("outputChannel", lane.outputChannel);
+        laneObject->setProperty ("dry", lane.dry);
+        laneObject->setProperty ("dryFallback", status.isDryFallback);
+        laneObject->setProperty ("pluginMuted", status.pluginMuted);
+        laneObject->setProperty ("pluginMuteAvailable", status.pluginMuteAvailable);
+        laneObject->setProperty ("strength", status.strengthNormalized);
+        laneObject->setProperty ("strengthAvailable", status.strengthAvailable);
+        laneObject->setProperty ("inputPeak", status.inputPeak);
+        laneObject->setProperty ("outputPeak", status.outputPeak);
+
+        auto displayStatus = status.text;
+        if (! engineRunning)
+            displayStatus = "ENGINE STOPPED";
+        else if (masterMuted)
+            displayStatus = "OUTPUT MUTED";
+        else if (status.pluginMuted)
+            displayStatus = "PLUGIN MUTED";
+        else if (lane.dry)
+            displayStatus = "BYPASSED";
+        laneObject->setProperty ("status", displayStatus);
+        lanes.add (juce::var (laneObject.release()));
+    }
+    root->setProperty ("lanes", lanes);
+
+    remoteControlServer.publishState (juce::var (root.release()));
+}
+
+void MainComponent::handleRemoteCommand (const juce::var& command)
+{
+    const auto type = command.getProperty ("type", {}).toString();
+
+    if (type == "refreshDevices")
+    {
+       #if ! DEFEEDBACK_UI_PREVIEW
+        engine.refreshDeviceList();
+       #endif
+        refreshAllControls();
+        rebuildLaneRows();
+        showMessage ("Core Audio device list refreshed remotely.", false);
+    }
+    else if (type == "selectDevice")
+    {
+        const auto index = static_cast<int> (command.getProperty ("index", -1));
+        if (! juce::isPositiveAndBelow (index, deviceChoices.size()))
+        {
+            showMessage ("Remote device selection is no longer available. Refresh and try again.", true);
+            return;
+        }
+       #if ! DEFEEDBACK_UI_PREVIEW
+        const auto error = engine.selectDevice (deviceChoices[index]);
+        if (error.isNotEmpty())
+        {
+            showMessage (error, true);
+            return;
+        }
+       #endif
+        refreshAllControls();
+        rebuildLaneRows();
+        saveConfig();
+        showMessage ("Core Audio device changed remotely.", false);
+    }
+    else if (type == "setSampleRate")
+    {
+        const auto value = static_cast<double> (command.getProperty ("value", 0.0));
+        if (! sampleRates.contains (value))
+        {
+            showMessage ("That sample rate is not currently available.", true);
+            return;
+        }
+       #if ! DEFEEDBACK_UI_PREVIEW
+        const auto error = engine.setSampleRate (value);
+        if (error.isNotEmpty())
+        {
+            showMessage (error, true);
+            return;
+        }
+       #endif
+        refreshAllControls();
+        saveConfig();
+        showMessage ("Sample rate changed remotely.", false);
+    }
+    else if (type == "setBufferSize")
+    {
+        const auto value = static_cast<int> (command.getProperty ("value", 0));
+        if (! bufferSizes.contains (value))
+        {
+            showMessage ("That buffer size is not currently available.", true);
+            return;
+        }
+       #if ! DEFEEDBACK_UI_PREVIEW
+        const auto error = engine.setBufferSize (value);
+        if (error.isNotEmpty())
+        {
+            showMessage (error, true);
+            return;
+        }
+       #endif
+        refreshAllControls();
+        saveConfig();
+        showMessage ("Buffer size changed remotely.", false);
+    }
+    else if (type == "setEngineRunning")
+    {
+        const auto shouldRun = static_cast<bool> (command.getProperty ("running", false));
+       #if DEFEEDBACK_UI_PREVIEW
+        if (previewEngineRunning != shouldRun)
+            startOrStop();
+       #else
+        if (engine.isRunning() != shouldRun)
+            startOrStop();
+       #endif
+    }
+    else if (type == "setMasterMuted")
+    {
+        const auto shouldMute = static_cast<bool> (command.getProperty ("muted", true));
+        engine.setEmergencyMuted (shouldMute);
+        updateRuntimeStatus();
+    }
+    else if (type == "resetXRuns")
+    {
+       #if ! DEFEEDBACK_UI_PREVIEW
+        engine.resetXRunCount();
+       #endif
+        showMessage ("Session XRun counter reset remotely.", false);
+        updateRuntimeStatus();
+    }
+    else if (type == "addLane")
+    {
+        addLane();
+    }
+    else if (type == "removeLane")
+    {
+        const auto index = findLaneIndexById (static_cast<int> (command.getProperty ("id", -1)));
+        if (! juce::isPositiveAndBelow (index, config.lanes.size()))
+        {
+            showMessage ("That lane no longer exists.", true);
+            return;
+        }
+        auto updated = config.lanes;
+        updated.remove (index);
+        applyLaneConfiguration (updated, "Lane removed remotely.");
+    }
+    else if (type == "updateLane")
+    {
+        const auto index = findLaneIndexById (static_cast<int> (command.getProperty ("id", -1)));
+        if (! juce::isPositiveAndBelow (index, config.lanes.size()))
+        {
+            showMessage ("That lane no longer exists.", true);
+            return;
+        }
+
+        const auto previous = config.lanes[index];
+        auto updated = config.lanes;
+        auto& lane = updated.getReference (index);
+        lane.name = command.getProperty ("name", lane.name).toString().trim();
+        if (lane.name.isEmpty())
+            lane.name = "Vocal " + juce::String (lane.id);
+        lane.inputChannel = static_cast<int> (command.getProperty ("inputChannel", lane.inputChannel));
+        lane.outputChannel = static_cast<int> (command.getProperty ("outputChannel", lane.outputChannel));
+        lane.dry = static_cast<bool> (command.getProperty ("dry", lane.dry));
+
+       #if DEFEEDBACK_UI_PREVIEW
+        const auto inputCount = previewChannelCount;
+        const auto outputCount = previewChannelCount;
+       #else
+        const auto inputCount = engine.getInputChannelNames().size();
+        const auto outputCount = engine.getOutputChannelNames().size();
+       #endif
+        if (! juce::isPositiveAndBelow (lane.inputChannel, inputCount)
+            || ! juce::isPositiveAndBelow (lane.outputChannel, outputCount))
+        {
+            showMessage ("Remote lane route is outside the current device channel range.", true);
+            return;
+        }
+
+        const auto processingChanged = lane.inputChannel != previous.inputChannel
+                                    || lane.outputChannel != previous.outputChannel
+                                    || lane.dry != previous.dry;
+        if (processingChanged)
+        {
+            applyLaneConfiguration (updated, "Lane routing updated remotely.");
+        }
+        else
+        {
+            config.lanes = updated;
+           #if ! DEFEEDBACK_UI_PREVIEW
+            engine.setLaneName (index, lane.name);
+            saveConfig();
+           #endif
+            rebuildLaneRows();
+            showMessage ("Lane name updated remotely.", false);
+        }
+    }
+    else if (type == "setLaneStrength")
+    {
+        const auto index = findLaneIndexById (static_cast<int> (command.getProperty ("id", -1)));
+        if (! juce::isPositiveAndBelow (index, config.lanes.size()))
+            return;
+        const auto value = juce::jlimit (0.0f, 1.0f,
+                                         static_cast<float> (command.getProperty ("value", 1.0)));
+       #if ! DEFEEDBACK_UI_PREVIEW
+        engine.setLaneStrength (index, value);
+        if (static_cast<bool> (command.getProperty ("commit", false)))
+            saveConfig();
+       #else
+        juce::ignoreUnused (value);
+       #endif
+    }
+    else if (type == "setLanePluginMuted")
+    {
+        const auto index = findLaneIndexById (static_cast<int> (command.getProperty ("id", -1)));
+        if (! juce::isPositiveAndBelow (index, config.lanes.size()))
+            return;
+       #if ! DEFEEDBACK_UI_PREVIEW
+        engine.setLanePluginMuted (index,
+                                   static_cast<bool> (command.getProperty ("muted", true)));
+        saveConfig();
+       #endif
+    }
+    else if (type == "setAutoStart")
+    {
+        config.autoStart = static_cast<bool> (command.getProperty ("enabled", false));
+        autoStartToggle.setToggleState (config.autoStart, juce::dontSendNotification);
+        saveConfig();
+    }
+    else if (type == "setLaunchAtLogin")
+    {
+        const auto enabled = static_cast<bool> (command.getProperty ("enabled", false));
+        juce::String error;
+       #if DEFEEDBACK_UI_PREVIEW
+        juce::ignoreUnused (error);
+       #else
+        if (! setLaunchAtLogin (enabled, error))
+        {
+            showMessage ("Launch at login: " + error, true);
+            return;
+        }
+       #endif
+        config.launchAtLogin = enabled;
+        launchAtLoginToggle.setToggleState (enabled, juce::dontSendNotification);
+        saveConfig();
+    }
+    else
+    {
+        showMessage ("Unknown remote command was rejected.", true);
     }
 }
 }

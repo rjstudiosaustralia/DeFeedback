@@ -25,6 +25,9 @@ int main()
     original.outputDeviceName = "RME Digiface Dante";
     original.sampleRate = 48000.0;
     original.bufferSize = 32;
+    original.remoteControlEnabled = true;
+    original.remoteControlPort = 9876;
+    original.remoteAccessCode = "12345678";
     original.mainWindowState = "1080 720 40 60";
     original.lanes.clear();
     original.lanes.add ({ 1, "Lead", 7, 11, false, "YWJj", true, "420 560 80 90" });
@@ -34,6 +37,9 @@ int main()
     expect (restored.inputDeviceName == original.inputDeviceName, "input device round-trip");
     expect (restored.outputDeviceName == original.outputDeviceName, "output device round-trip");
     expect (restored.bufferSize == 32, "buffer round-trip");
+    expect (restored.remoteControlEnabled, "remote enabled round-trip");
+    expect (restored.remoteControlPort == 9876, "remote port round-trip");
+    expect (restored.remoteAccessCode == "12345678", "remote access code round-trip");
     expect (restored.mainWindowState == original.mainWindowState, "main window state round-trip");
     expect (restored.lanes == original.lanes, "lane configuration round-trip");
 

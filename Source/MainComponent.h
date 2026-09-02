@@ -2,6 +2,7 @@
 
 #include "AppConfig.h"
 #include "AudioEngine.h"
+#include "RemoteControlServer.h"
 #include "SettingsStore.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -32,14 +33,23 @@ private:
     void refreshDeviceControls();
     void rebuildLaneRows();
     void applyLanes();
+    bool applyLaneConfiguration (const juce::Array<LaneConfig>&, const juce::String& successMessage);
+    void addLane();
+    int findLaneIndexById (int id) const;
     void saveConfig();
     void showMessage (const juce::String&, bool isError);
     void startOrStop();
     void updateRuntimeStatus();
+    bool startRemoteControl();
+    void stopRemoteControl();
+    void updateRemoteControls();
+    void publishRemoteState (const juce::Array<LaneStatus>&, bool engineRunning, bool masterMuted);
+    void handleRemoteCommand (const juce::var&);
 
     SettingsStore settings;
     AppConfig config;
     AudioEngine engine;
+    RemoteControlServer remoteControlServer;
 
     juce::Label titleLabel;
     juce::Label subtitleLabel;
@@ -52,6 +62,7 @@ private:
     juce::Label pluginLabel;
     juce::Label alertLabel;
     juce::Label routingHintLabel;
+    juce::Label remoteStatusLabel;
 
     juce::ComboBox deviceCombo;
     juce::ComboBox rateCombo;
@@ -62,8 +73,11 @@ private:
     juce::TextButton resetXRunsButton { "RESET XRUNS" };
     juce::TextButton addLaneButton { "+ ADD LANE" };
     juce::TextButton aboutButton { "ABOUT / SAFETY" };
+    juce::TextButton copyRemoteButton { "COPY DETAILS" };
+    juce::TextButton newRemoteCodeButton { "NEW CODE" };
     juce::ToggleButton autoStartToggle { "Auto-start audio" };
     juce::ToggleButton launchAtLoginToggle { "Launch at login" };
+    juce::ToggleButton remoteControlToggle { "Enable full-control LAN remote" };
 
     juce::Viewport laneViewport;
     juce::Component laneContainer;
@@ -75,6 +89,9 @@ private:
 
     bool refreshingControls = false;
     bool safeLaunch = false;
+    juce::String remoteActionMessage;
+    bool remoteActionError = false;
+    double remoteActionMessageExpiresAtMs = 0.0;
    #if DEFEEDBACK_UI_PREVIEW
     bool previewEngineRunning = true;
    #endif

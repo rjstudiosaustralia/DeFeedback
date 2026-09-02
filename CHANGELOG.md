@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0 — 2026-09-01
+
+- Added an optional responsive full-control LAN browser interface, disabled by default.
+- Added authenticated control of Core Audio device refresh/selection, sample rate, buffer, engine, master output mute, auto-start, launch-at-login, lanes, routing, Strength, plugin Mute, bypass, and XRun reset.
+- Added live browser meters, CPU, latency, XRun, plugin, lane-state, and safety status reporting.
+- Persisted an eight-digit access code for monitor-free launch-at-login operation.
+- Added code rotation, memory-only browser sessions, failed-login rate limiting, no-store/security response headers, and a self-contained page with no cloud assets.
+- Kept every network operation off the Core Audio callback by publishing state snapshots and queuing commands to the message thread.
+- Disabled input/output channels already assigned to another browser lane and retained server-side exclusive-route validation.
+- Added mobile and tablet layouts with live-use colors matching the Mac interface.
+- Avoided graph rebuilds for remote lane-name-only changes and avoided full state-file writes during a remote Strength drag.
+- Restricted the settings file containing the remote code to the current macOS user.
+- Added headless setup, HTTP/VLAN safety, recovery, architecture, and hardware-validation guidance.
+
 ## 0.4.0 — 2026-09-01
 
 - Removed the fixed ten-lane application ceiling.

@@ -421,6 +421,12 @@ void AudioEngine::setLanePluginMuted (int laneIndex, bool shouldMute)
     }
 }
 
+void AudioEngine::setLaneName (int laneIndex, const juce::String& name)
+{
+    if (juce::isPositiveAndBelow (laneIndex, lanes.size()))
+        lanes.getReference (laneIndex).name = name;
+}
+
 void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     if (! suppressDeviceNotifications)
