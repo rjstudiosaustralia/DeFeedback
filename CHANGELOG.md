@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.2 — 2026-09-03
+
+- Corrected the deployment configuration so release binaries genuinely target macOS 13 instead of inheriting the build Mac's newer OS version.
+- Moved the Apple Silicon architecture and macOS deployment settings before compiler initialization for reproducible clean builds.
+- Added local packaging and GitHub CI checks that reject any binary not stamped for macOS 13 and arm64.
+- Clarified the distinction between binary compatibility and hardware qualification for older macOS, De-Feedback, and audio-driver combinations.
+- Kept the audio engine and signal-processing paths unchanged.
+
 ## 0.5.1 — 2026-09-01
 
 - Fixed browser Mute and Bypass controls remaining visually stale after a click kept keyboard focus inside a lane.

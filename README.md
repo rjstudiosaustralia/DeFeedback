@@ -12,22 +12,22 @@ It is deliberately not a general-purpose DAW. The operator selects one Core Audi
 
 ## Download
 
-### [Download DeFeedback Live 0.5.1 for Apple Silicon →](https://github.com/rjstudiosaustralia/DeFeedback/releases/download/v0.5.1/DeFeedback-Live-0.5.1-adhoc-arm64.zip)
+### [Download DeFeedback Live 0.5.2 for Apple Silicon →](https://github.com/rjstudiosaustralia/DeFeedback/releases/download/v0.5.2/DeFeedback-Live-0.5.2-adhoc-arm64.zip)
 
 Or visit the [Latest release page](https://github.com/rjstudiosaustralia/DeFeedback/releases/latest) for release notes and the SHA-256 checksum.
 
-1. Download and unzip `DeFeedback-Live-0.5.1-adhoc-arm64.zip`.
+1. Download and unzip `DeFeedback-Live-0.5.2-adhoc-arm64.zip`.
 2. Move `DeFeedback Live.app` to the Applications folder.
 3. Install and activate the Alpha Labs De-Feedback Audio Unit separately.
 4. Open DeFeedback Live and begin with `MUTE ALL OUTPUTS` engaged.
 
 The current preview is ad-hoc signed but not Apple-notarized. If macOS blocks the first launch, try opening the app once, then go to **System Settings → Privacy & Security** and use **Open Anyway** only if you downloaded it from this official release. See [Apple's safety guidance](https://support.apple.com/en-au/102445).
 
-Supported runtime: Apple Silicon and macOS 13 or newer. Intel Macs are not supported.
+Binary compatibility: Apple Silicon and macOS 13 Ventura or newer. Intel Macs are not supported. macOS 13–15 remain build-compatible but should be hardware-qualified with the exact De-Feedback version and audio-interface driver before live use.
 
 ## Current status
 
-Version `0.5.1` is a working engineering preview:
+Version `0.5.2` is a working engineering preview:
 
 - arm64-only macOS application;
 - AUv2 hosting for De-Feedback 1.1.4 (`aufx/FbTI/jDSP`);

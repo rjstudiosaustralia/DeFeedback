@@ -28,6 +28,9 @@ jobs:
       - name: Verify Apple Silicon binary
         run: lipo -archs "build/DeFeedbackLive_artefacts/Release/DeFeedback Live.app/Contents/MacOS/DeFeedback Live" | grep -qx arm64
 
+      - name: Verify macOS 13 deployment target
+        run: vtool -show-build "build/DeFeedbackLive_artefacts/Release/DeFeedback Live.app/Contents/MacOS/DeFeedback Live" | grep -Eq 'minos[[:space:]]+13\.0$'
+
       - name: Package ad-hoc-signed engineering build
         run: ./scripts/package-adhoc.sh Release build
 

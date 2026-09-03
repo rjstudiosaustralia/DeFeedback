@@ -1,11 +1,26 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(DeFeedbackLive VERSION 0.5.1 LANGUAGES C CXX OBJC OBJCXX)
+# These must be established before project() enables the Apple compilers.
+# Otherwise a fresh build can silently inherit the build machine's macOS
+# version and produce an application that will not launch on older systems.
+set(DEFEEDBACK_MINIMUM_MACOS_VERSION "13.0")
+if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL "")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "${DEFEEDBACK_MINIMUM_MACOS_VERSION}"
+        CACHE STRING "Minimum supported macOS" FORCE)
+endif()
+if(NOT DEFINED CMAKE_OSX_ARCHITECTURES OR CMAKE_OSX_ARCHITECTURES STREQUAL "")
+    set(CMAKE_OSX_ARCHITECTURES arm64 CACHE STRING "Apple Silicon only" FORCE)
+endif()
+
+project(DeFeedbackLive VERSION 0.5.2 LANGUAGES C CXX OBJC OBJCXX)
+
+if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS DEFEEDBACK_MINIMUM_MACOS_VERSION)
+    message(FATAL_ERROR
+        "DeFeedback Live requires macOS ${DEFEEDBACK_MINIMUM_MACOS_VERSION} or newer")
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_OSX_ARCHITECTURES arm64 CACHE STRING "Apple Silicon only")
-set(CMAKE_OSX_DEPLOYMENT_TARGET 13.0 CACHE STRING "Minimum supported macOS")
 
 option(DEFEEDBACK_BUILD_TESTS "Build the configuration test suite" ON)
 option(DEFEEDBACK_QA_BUILD "Use a separate bundle identity for side-by-side UI QA" OFF)
