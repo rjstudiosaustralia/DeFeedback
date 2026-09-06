@@ -27,7 +27,9 @@ AppConfig loadInitialConfig (SettingsStore& settings)
     preview.autoStart = false;
     preview.launchAtLogin = false;
     preview.remoteControlEnabled = true;
+    preview.remoteAccessCodeRequired = true;
     preview.remoteAccessCode = "12345678";
+    preview.remoteBrowserToken = juce::String::repeatedString ("0123456789abcdef", 4);
     preview.remoteControlPort = 8766;
     preview.lanes.clear();
     preview.lanes.add ({ 1, "Lead Vocal", 0, 0, false, {}, false, {} });
@@ -451,6 +453,11 @@ private:
 MainComponent::MainComponent (bool shouldUseSafeLaunch)
     : config (loadInitialConfig (settings)), safeLaunch (shouldUseSafeLaunch)
 {
+    if (config.remoteAccessCode.isEmpty())
+        config.remoteAccessCode = RemoteControlServer::generateAccessCode();
+    if (config.remoteBrowserToken.length() < 32)
+        config.remoteBrowserToken = RemoteControlServer::generateBrowserToken();
+
     setOpaque (true);
 
     titleLabel.setText ("DEFEEDBACK LIVE", juce::dontSendNotification);
@@ -598,15 +605,12 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
     addAndMakeVisible (launchAtLoginToggle);
 
     remoteControlToggle.setToggleState (config.remoteControlEnabled, juce::dontSendNotification);
-    remoteControlToggle.setTooltip ("Expose full control on the local network. Access requires the saved eight-digit code.");
+    remoteControlToggle.setTooltip ("Expose full control on the local network using the configured access protection.");
     remoteControlToggle.onClick = [this]
     {
         const auto shouldEnable = remoteControlToggle.getToggleState();
         if (shouldEnable)
         {
-            if (config.remoteAccessCode.isEmpty())
-                config.remoteAccessCode = RemoteControlServer::generateAccessCode();
-
             config.remoteControlEnabled = startRemoteControl();
             remoteControlToggle.setToggleState (config.remoteControlEnabled, juce::dontSendNotification);
         }
@@ -627,7 +631,7 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
     remoteStatusLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (remoteStatusLabel);
 
-    copyRemoteButton.setTooltip ("Copy the LAN address and access code to the clipboard.");
+    copyRemoteButton.setTooltip ("Copy the LAN address and current access details to the clipboard.");
     copyRemoteButton.onClick = [this]
     {
         const auto urls = remoteControlServer.getDisplayUrls();
@@ -637,27 +641,17 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
             return;
         }
 
-        juce::SystemClipboard::copyTextToClipboard (urls[0] + "\nAccess code: " + config.remoteAccessCode);
-        showMessage ("Remote address and access code copied.", false);
+        const auto access = config.remoteAccessCodeRequired
+                              ? "Access code: " + config.remoteAccessCode
+                              : "Access code: OFF - any device on this LAN can control the app";
+        juce::SystemClipboard::copyTextToClipboard (urls[0] + "\n" + access);
+        showMessage ("Remote address and access details copied.", false);
     };
     addAndMakeVisible (copyRemoteButton);
 
-    newRemoteCodeButton.setTooltip ("Generate a new saved access code and disconnect every browser session.");
-    newRemoteCodeButton.onClick = [this]
-    {
-        config.remoteAccessCode = RemoteControlServer::generateAccessCode();
-        auto restartSucceeded = true;
-        if (config.remoteControlEnabled)
-        {
-            restartSucceeded = startRemoteControl();
-            config.remoteControlEnabled = restartSucceeded;
-        }
-        updateRemoteControls();
-        saveConfig();
-        if (restartSucceeded)
-            showMessage ("New LAN remote access code generated. Existing browser sessions were disconnected.", false);
-    };
-    addAndMakeVisible (newRemoteCodeButton);
+    remoteAccessButton.setTooltip ("Choose a custom or random code, or explicitly disable access-code protection.");
+    remoteAccessButton.onClick = [this] { showRemoteAccessDialog(); };
+    addAndMakeVisible (remoteAccessButton);
 
     metricsLabel.setJustificationType (juce::Justification::centredRight);
     metricsLabel.setColour (juce::Label::textColourId, text);
@@ -702,11 +696,10 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
 
     if (config.remoteControlEnabled)
     {
-        if (config.remoteAccessCode.isEmpty())
-            config.remoteAccessCode = RemoteControlServer::generateAccessCode();
         config.remoteControlEnabled = startRemoteControl();
     }
     updateRemoteControls();
+    saveConfig();
 
     if (! safeLaunch
         && config.launchAtLogin
@@ -811,7 +804,7 @@ void MainComponent::resized()
     pluginLabel.setBounds (setupPanel.removeFromTop (24));
     auto remoteLine = setupPanel.removeFromTop (42);
     remoteControlToggle.setBounds (remoteLine.removeFromLeft (225));
-    newRemoteCodeButton.setBounds (remoteLine.removeFromRight (90).reduced (2, 5));
+    remoteAccessButton.setBounds (remoteLine.removeFromRight (90).reduced (2, 5));
     copyRemoteButton.setBounds (remoteLine.removeFromRight (112).reduced (2, 5));
     remoteStatusLabel.setBounds (remoteLine.reduced (8, 0));
     area.removeFromTop (10);
@@ -1310,6 +1303,8 @@ bool MainComponent::startRemoteControl()
     const auto started = remoteControlServer.startServer (
         config.remoteControlPort,
         config.remoteAccessCode,
+        config.remoteAccessCodeRequired,
+        config.remoteBrowserToken,
         [safe = juce::Component::SafePointer<MainComponent> (this)] (const juce::var& command)
         {
             const auto commandCopy = command;
@@ -1338,21 +1333,109 @@ void MainComponent::stopRemoteControl()
     updateRemoteControls();
 }
 
+void MainComponent::showRemoteAccessDialog()
+{
+    auto* dialog = new juce::AlertWindow (
+        "LAN Remote Access",
+        "The remote can control live audio. Use access-code protection on any shared network.\n\n"
+        "Turning protection off lets every device that can reach this Mac control the engine, routing, mutes, and plugins.",
+        juce::MessageBoxIconType::WarningIcon);
+
+    juce::StringArray protectionChoices;
+    protectionChoices.add ("Require an access code");
+    protectionChoices.add ("NO CODE - any LAN device has full control");
+    dialog->addComboBox ("protection", protectionChoices, "Protection");
+    if (auto* protection = dialog->getComboBoxComponent ("protection"))
+        protection->setSelectedId (config.remoteAccessCodeRequired ? 1 : 2, juce::dontSendNotification);
+
+    dialog->addTextEditor ("code", config.remoteAccessCode, "Access code (4-64 characters)");
+    if (auto* editor = dialog->getTextEditor ("code"))
+        editor->setInputRestrictions (64);
+
+    dialog->addButton ("APPLY", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    dialog->addButton ("USE RANDOM CODE", 2);
+    dialog->addButton ("CANCEL", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    dialog->enterModalState (
+        true,
+        juce::ModalCallbackFunction::create (
+            [safe = juce::Component::SafePointer<MainComponent> (this), dialog] (int result)
+            {
+                std::unique_ptr<juce::AlertWindow> owner (dialog);
+                if (safe == nullptr || result == 0)
+                    return;
+
+                const auto requireCode = result == 2
+                                       || dialog->getComboBoxComponent ("protection")->getSelectedId() == 1;
+                const auto nextCode = result == 2
+                                    ? RemoteControlServer::generateAccessCode()
+                                    : dialog->getTextEditorContents ("code");
+
+                juce::String validationError;
+                if (requireCode && ! RemoteControlServer::validateAccessCode (nextCode, validationError))
+                {
+                    safe->showMessage (validationError, true);
+                    juce::MessageManager::callAsync ([safe]
+                    {
+                        if (safe != nullptr)
+                            safe->showRemoteAccessDialog();
+                    });
+                    return;
+                }
+
+                const auto securityChanged = safe->config.remoteAccessCodeRequired != requireCode
+                                          || safe->config.remoteAccessCode != nextCode;
+                safe->config.remoteAccessCodeRequired = requireCode;
+                safe->config.remoteAccessCode = nextCode;
+                if (securityChanged)
+                    safe->config.remoteBrowserToken = RemoteControlServer::generateBrowserToken();
+
+                auto restarted = true;
+                if (safe->config.remoteControlEnabled)
+                {
+                    restarted = safe->startRemoteControl();
+                    safe->config.remoteControlEnabled = restarted;
+                }
+
+                safe->updateRemoteControls();
+                safe->saveConfig();
+                if (restarted)
+                {
+                    safe->showMessage (
+                        requireCode
+                            ? "LAN access code saved. Previously remembered browsers must authenticate again."
+                            : "LAN access code disabled. Any device on this network now has full control.",
+                        ! requireCode);
+                }
+            }),
+        false);
+}
+
 void MainComponent::updateRemoteControls()
 {
     const auto listening = remoteControlServer.isListening();
     remoteControlToggle.setToggleState (config.remoteControlEnabled && listening,
                                         juce::dontSendNotification);
     copyRemoteButton.setEnabled (listening);
-    newRemoteCodeButton.setEnabled (config.remoteControlEnabled || config.remoteAccessCode.isNotEmpty());
+    remoteAccessButton.setEnabled (true);
 
     if (listening)
     {
         const auto urls = remoteControlServer.getDisplayUrls();
-        remoteStatusLabel.setText ("FULL CONTROL  |  " + urls.joinIntoString ("  /  ")
-                                       + "  |  ACCESS CODE " + config.remoteAccessCode,
-                                   juce::dontSendNotification);
-        remoteStatusLabel.setColour (juce::Label::textColourId, green);
+        if (config.remoteAccessCodeRequired)
+        {
+            remoteStatusLabel.setText ("FULL CONTROL  |  " + urls.joinIntoString ("  /  ")
+                                           + "  |  ACCESS CODE " + config.remoteAccessCode,
+                                       juce::dontSendNotification);
+            remoteStatusLabel.setColour (juce::Label::textColourId, green);
+        }
+        else
+        {
+            remoteStatusLabel.setText ("FULL CONTROL  |  " + urls.joinIntoString ("  /  ")
+                                           + "  |  NO ACCESS CODE - ANY LAN DEVICE CAN CONTROL AUDIO",
+                                       juce::dontSendNotification);
+            remoteStatusLabel.setColour (juce::Label::textColourId, red);
+        }
     }
     else
     {
@@ -1373,6 +1456,7 @@ void MainComponent::publishRemoteState (const juce::Array<LaneStatus>& statuses,
     root->setProperty ("autoStart", config.autoStart);
     root->setProperty ("launchAtLogin", config.launchAtLogin);
     root->setProperty ("sleepPrevented", sleepInhibitor.isActive());
+    root->setProperty ("accessCodeRequired", config.remoteAccessCodeRequired);
 
    #if DEFEEDBACK_UI_PREVIEW
     root->setProperty ("latencyMs", 4.0);

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0 — 2026-09-06
+
+- Added custom LAN access codes between 4 and 64 characters and retained one-click random code generation.
+- Added an explicit no-code mode for isolated control networks, with prominent warnings in the Mac and browser interfaces.
+- Added persistent HttpOnly, SameSite browser authentication cookies so approved browsers survive browser and app restarts for up to one year.
+- Made browser logout and every access-code/protection change revoke remembered-browser authentication.
+- Added a packaged Bitfocus Companion module using the current Node 22 module runtime.
+- Added Companion actions for absolute and stepped Strength/Sensitivity, lane bypass, plugin Mute, lane plugin on/off, master output mute, engine state, XRun reset, and Core Audio device refresh.
+- Added Companion live feedbacks, variables, and ready-made master/lane presets, including rotary Strength control.
+- Added CI validation and packaging for the Companion module.
+
 ## 0.6.0 — 2026-09-06
 
 - Added a per-lane `PLUGIN` on/off control in both the native rack and LAN browser remote.

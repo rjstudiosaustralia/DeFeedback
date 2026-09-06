@@ -39,3 +39,39 @@ jobs:
           name: DeFeedback-Live-adhoc-arm64
           path: dist/DeFeedback-Live-*-adhoc-arm64.zip
           if-no-files-found: error
+
+  companion:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: companion-module
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.20.0
+          cache: pnpm
+          cache-dependency-path: companion-module/pnpm-lock.yaml
+
+      - name: Install Companion module dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint Companion module
+        run: pnpm run lint
+
+      - name: Test Companion module authentication and commands
+        run: pnpm run test
+
+      - name: Build and package Companion module
+        run: pnpm run package
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: DeFeedback-Live-Companion-module
+          path: companion-module/rjstudiosaustralia-defeedback-live-*.tgz
+          if-no-files-found: error

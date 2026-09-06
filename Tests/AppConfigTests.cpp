@@ -28,7 +28,9 @@ int main()
     original.bufferSize = 32;
     original.remoteControlEnabled = true;
     original.remoteControlPort = 9876;
+    original.remoteAccessCodeRequired = false;
     original.remoteAccessCode = "12345678";
+    original.remoteBrowserToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     original.mainWindowState = "1080 720 40 60";
     original.lanes.clear();
     original.lanes.add ({ 1, "Lead", 7, 11, false, "YWJj", true, "420 560 80 90" });
@@ -40,7 +42,9 @@ int main()
     expect (restored.bufferSize == 32, "buffer round-trip");
     expect (restored.remoteControlEnabled, "remote enabled round-trip");
     expect (restored.remoteControlPort == 9876, "remote port round-trip");
+    expect (! restored.remoteAccessCodeRequired, "remote access-code mode round-trip");
     expect (restored.remoteAccessCode == "12345678", "remote access code round-trip");
+    expect (restored.remoteBrowserToken == original.remoteBrowserToken, "remembered-browser token round-trip");
     expect (restored.mainWindowState == original.mainWindowState, "main window state round-trip");
     expect (restored.lanes == original.lanes, "lane configuration round-trip");
 

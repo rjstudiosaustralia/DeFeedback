@@ -43,6 +43,7 @@ private:
     void updateRuntimeStatus();
     bool startRemoteControl();
     void stopRemoteControl();
+    void showRemoteAccessDialog();
     void updateRemoteControls();
     void publishRemoteState (const juce::Array<LaneStatus>&, bool engineRunning, bool masterMuted);
     void handleRemoteCommand (const juce::var&);
@@ -76,7 +77,7 @@ private:
     juce::TextButton addLaneButton { "+ ADD LANE" };
     juce::TextButton aboutButton { "ABOUT / SAFETY" };
     juce::TextButton copyRemoteButton { "COPY DETAILS" };
-    juce::TextButton newRemoteCodeButton { "NEW CODE" };
+    juce::TextButton remoteAccessButton { "ACCESS" };
     juce::ToggleButton autoStartToggle { "Auto-start audio" };
     juce::ToggleButton launchAtLoginToggle { "Launch at login" };
     juce::ToggleButton remoteControlToggle { "Enable full-control LAN remote" };

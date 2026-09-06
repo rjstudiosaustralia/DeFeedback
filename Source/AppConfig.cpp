@@ -10,7 +10,7 @@ AppConfig::AppConfig()
 std::unique_ptr<juce::XmlElement> AppConfig::toXml() const
 {
     auto root = std::make_unique<juce::XmlElement> ("DEFEEDBACK_LIVE_CONFIG");
-    root->setAttribute ("formatVersion", 4);
+    root->setAttribute ("formatVersion", 5);
     root->setAttribute ("inputDevice", inputDeviceName);
     root->setAttribute ("outputDevice", outputDeviceName);
     root->setAttribute ("sampleRate", sampleRate);
@@ -19,7 +19,9 @@ std::unique_ptr<juce::XmlElement> AppConfig::toXml() const
     root->setAttribute ("launchAtLogin", launchAtLogin);
     root->setAttribute ("remoteControlEnabled", remoteControlEnabled);
     root->setAttribute ("remoteControlPort", remoteControlPort);
+    root->setAttribute ("remoteAccessCodeRequired", remoteAccessCodeRequired);
     root->setAttribute ("remoteAccessCode", remoteAccessCode);
+    root->setAttribute ("remoteBrowserToken", remoteBrowserToken);
     root->setAttribute ("mainWindowState", mainWindowState);
 
     for (const auto& lane : lanes)
@@ -55,7 +57,9 @@ AppConfig AppConfig::fromXml (const juce::XmlElement& root)
     result.remoteControlEnabled = root.getBoolAttribute ("remoteControlEnabled", false);
     result.remoteControlPort = juce::jlimit (1024, 65535,
                                              root.getIntAttribute ("remoteControlPort", 8765));
+    result.remoteAccessCodeRequired = root.getBoolAttribute ("remoteAccessCodeRequired", true);
     result.remoteAccessCode = root.getStringAttribute ("remoteAccessCode");
+    result.remoteBrowserToken = root.getStringAttribute ("remoteBrowserToken");
     result.mainWindowState = root.getStringAttribute ("mainWindowState");
     result.lanes.clear();
 

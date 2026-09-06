@@ -20,6 +20,7 @@ struct HttpRequest
     juce::String method;
     juce::String path;
     juce::String authorisation;
+    juce::String cookie;
     juce::String body;
 };
 
@@ -96,6 +97,8 @@ bool readRequest (juce::StreamingSocket& socket, HttpRequest& result)
                     contentLength = static_cast<size_t> (juce::jmax (0, value.getIntValue()));
                 else if (key.equalsIgnoreCase ("Authorization"))
                     result.authorisation = value;
+                else if (key.equalsIgnoreCase ("Cookie"))
+                    result.cookie = value;
             }
 
             if (headerEnd + 4 > maxRequestBytes
@@ -162,10 +165,26 @@ void sendResponse (juce::StreamingSocket& socket,
         writeAll (socket, bodyBytes.getData(), bodyBytes.getSize());
 }
 
-void sendJson (juce::StreamingSocket& socket, int status, const juce::String& body)
+void sendJson (juce::StreamingSocket& socket,
+               int status,
+               const juce::String& body,
+               const juce::String& extraHeaders = {})
 {
     sendResponse (socket, status, status == 200 ? "OK" : (status == 202 ? "Accepted" : "Error"),
-                  "application/json; charset=utf-8", body);
+                  "application/json; charset=utf-8", body, extraHeaders);
+}
+
+juce::String findCookie (const juce::String& header, const juce::String& name)
+{
+    juce::StringArray fields;
+    fields.addTokens (header, ";", {});
+    for (const auto& field : fields)
+    {
+        const auto key = field.upToFirstOccurrenceOf ("=", false, false).trim();
+        if (key == name)
+            return field.fromFirstOccurrenceOf ("=", false, false).trim();
+    }
+    return {};
 }
 }
 
@@ -181,6 +200,8 @@ RemoteControlServer::~RemoteControlServer()
 
 bool RemoteControlServer::startServer (int port,
                                        const juce::String& accessCode,
+                                       bool accessCodeRequired,
+                                       const juce::String& browserToken,
                                        CommandSink sink,
                                        juce::String& error)
 {
@@ -192,9 +213,12 @@ bool RemoteControlServer::startServer (int port,
         return false;
     }
 
-    if (accessCode.length() != 8 || ! accessCode.containsOnly ("0123456789"))
+    if (accessCodeRequired && ! validateAccessCode (accessCode, error))
+        return false;
+
+    if (browserToken.length() < 32)
     {
-        error = "Remote access code must contain exactly eight digits.";
+        error = "Could not initialise remembered-browser authentication.";
         return false;
     }
 
@@ -209,7 +233,8 @@ bool RemoteControlServer::startServer (int port,
     {
         const juce::ScopedLock lock (authLock);
         currentAccessCode = accessCode;
-        sessionTokens.clear();
+        currentAccessCodeRequired = accessCodeRequired;
+        currentBrowserToken = browserToken;
     }
 
     commandHandler = std::move (sink);
@@ -236,7 +261,12 @@ void RemoteControlServer::stopServer()
     commandHandler = {};
     listening.store (false);
     listeningPort.store (0);
-    clearSessions();
+    {
+        const juce::ScopedLock lock (authLock);
+        currentAccessCode.clear();
+        currentBrowserToken.clear();
+        currentAccessCodeRequired = true;
+    }
 }
 
 void RemoteControlServer::publishState (const juce::var& state)
@@ -254,6 +284,38 @@ juce::String RemoteControlServer::generateAccessCode()
     const auto number = juce::Random::getSystemRandom().nextInt (juce::Range<int> (0, 100000000));
    #endif
     return juce::String (number).paddedLeft ('0', 8);
+}
+
+juce::String RemoteControlServer::generateBrowserToken()
+{
+   #if JUCE_MAC
+    std::array<unsigned char, 32> randomBytes {};
+    ::arc4random_buf (randomBytes.data(), randomBytes.size());
+    return juce::String::toHexString (randomBytes.data(),
+                                      static_cast<int> (randomBytes.size()),
+                                      0);
+   #else
+    return juce::Uuid().toString().removeCharacters ("-")
+         + juce::Uuid().toString().removeCharacters ("-");
+   #endif
+}
+
+bool RemoteControlServer::validateAccessCode (const juce::String& code, juce::String& error)
+{
+    if (code.length() < 4 || code.length() > 64)
+    {
+        error = "Remote access code must contain between 4 and 64 characters.";
+        return false;
+    }
+
+    if (code.containsAnyOf ("\r\n"))
+    {
+        error = "Remote access code cannot contain a line break.";
+        return false;
+    }
+
+    error.clear();
+    return true;
 }
 
 juce::StringArray RemoteControlServer::getDisplayUrls() const
@@ -310,12 +372,17 @@ void RemoteControlServer::handleClient (juce::StreamingSocket& socket)
         const auto parseResult = juce::JSON::parse (request.body, parsed);
         const auto suppliedCode = parsed.getProperty ("code", {}).toString();
         juce::String expectedCode;
+        juce::String browserToken;
+        bool codeRequired = true;
         {
             const juce::ScopedLock lock (authLock);
             expectedCode = currentAccessCode;
+            browserToken = currentBrowserToken;
+            codeRequired = currentAccessCodeRequired;
         }
 
-        if (parseResult.failed() || ! constantTimeEquals (suppliedCode, expectedCode))
+        if (codeRequired
+            && (parseResult.failed() || ! constantTimeEquals (suppliedCode, expectedCode)))
         {
             juce::Thread::sleep (350);
             sendJson (socket, 401, R"({"error":"Incorrect access code"})");
@@ -323,12 +390,19 @@ void RemoteControlServer::handleClient (juce::StreamingSocket& socket)
         }
 
         auto response = std::make_unique<juce::DynamicObject>();
-        response->setProperty ("token", createSessionToken());
-        sendJson (socket, 200, juce::JSON::toString (juce::var (response.release()), false));
+        response->setProperty ("authenticated", true);
+        response->setProperty ("codeRequired", codeRequired);
+        const auto cookieHeader = codeRequired
+                                    ? "Set-Cookie: " + getCookieName() + "=" + browserToken
+                                        + "; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict\r\n"
+                                    : juce::String {};
+        sendJson (socket, 200,
+                  juce::JSON::toString (juce::var (response.release()), false),
+                  cookieHeader);
         return;
     }
 
-    if (! isAuthorised (request.authorisation))
+    if (! isAuthorised (request.authorisation, request.cookie))
     {
         sendJson (socket, 401, R"({"error":"Authentication required"})");
         return;
@@ -336,8 +410,9 @@ void RemoteControlServer::handleClient (juce::StreamingSocket& socket)
 
     if (request.method == "POST" && request.path == "/api/logout")
     {
-        revokeSession (request.authorisation);
-        sendJson (socket, 200, R"({"loggedOut":true})");
+        sendJson (socket, 200, R"({"loggedOut":true})",
+                  "Set-Cookie: " + getCookieName()
+                      + "=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict\r\n");
         return;
     }
 
@@ -371,53 +446,23 @@ void RemoteControlServer::handleClient (juce::StreamingSocket& socket)
     sendJson (socket, 404, R"({"error":"Not found"})");
 }
 
-bool RemoteControlServer::isAuthorised (const juce::String& header) const
+bool RemoteControlServer::isAuthorised (const juce::String& header,
+                                        const juce::String& cookieHeader) const
 {
-    if (! header.startsWithIgnoreCase ("Bearer "))
-        return false;
-
-    const auto token = header.substring (7).trim();
     const juce::ScopedLock lock (authLock);
-    for (const auto& session : sessionTokens)
-        if (constantTimeEquals (token, session))
-            return true;
-    return false;
+    if (! currentAccessCodeRequired)
+        return true;
+
+    const auto bearerToken = header.startsWithIgnoreCase ("Bearer ")
+                               ? header.substring (7).trim()
+                               : juce::String {};
+    const auto cookieToken = findCookie (cookieHeader, getCookieName());
+    return constantTimeEquals (bearerToken, currentBrowserToken)
+        || constantTimeEquals (cookieToken, currentBrowserToken);
 }
 
-juce::String RemoteControlServer::createSessionToken()
+juce::String RemoteControlServer::getCookieName() const
 {
-   #if JUCE_MAC
-    std::array<unsigned char, 32> randomBytes {};
-    ::arc4random_buf (randomBytes.data(), randomBytes.size());
-    const auto token = juce::String::toHexString (randomBytes.data(),
-                                                   static_cast<int> (randomBytes.size()),
-                                                   0);
-   #else
-    const auto token = juce::Uuid().toString().removeCharacters ("-")
-                     + juce::Uuid().toString().removeCharacters ("-");
-   #endif
-    const juce::ScopedLock lock (authLock);
-    sessionTokens.add (token);
-    while (sessionTokens.size() > 8)
-        sessionTokens.remove (0);
-    return token;
-}
-
-void RemoteControlServer::revokeSession (const juce::String& header)
-{
-    const auto token = header.startsWithIgnoreCase ("Bearer ")
-                     ? header.substring (7).trim()
-                     : juce::String {};
-    const juce::ScopedLock lock (authLock);
-    for (int index = sessionTokens.size(); --index >= 0;)
-        if (constantTimeEquals (token, sessionTokens[index]))
-            sessionTokens.remove (index);
-}
-
-void RemoteControlServer::clearSessions()
-{
-    const juce::ScopedLock lock (authLock);
-    sessionTokens.clear();
-    currentAccessCode.clear();
+    return "DeFeedbackRemote" + juce::String (listeningPort.load());
 }
 }

@@ -3,6 +3,7 @@
 /build-*/
 /Builds/
 /dist/
+/.pnpm-store/
 /cmake-build-*/
 *.xcuserstate
 xcuserdata/

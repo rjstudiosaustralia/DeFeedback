@@ -29,7 +29,9 @@ struct AppConfig
     bool launchAtLogin = true;
     bool remoteControlEnabled = false;
     int remoteControlPort = 8765;
+    bool remoteAccessCodeRequired = true;
     juce::String remoteAccessCode;
+    juce::String remoteBrowserToken;
     juce::String mainWindowState;
     juce::Array<LaneConfig> lanes;
 

@@ -1,0 +1,44 @@
+{
+	"name": "companion-module-rjstudiosaustralia-defeedback-live",
+	"version": "0.1.0",
+	"description": "Bitfocus Companion control for DeFeedback Live",
+	"main": "dist/main.js",
+	"type": "module",
+	"scripts": {
+		"format": "prettier -w .",
+		"package": "pnpm run build && companion-module-build",
+		"build": "rimraf dist && pnpm run build:main",
+		"build:main": "tsc -p tsconfig.build.json",
+		"test": "pnpm run build && node --test test/*.test.mjs",
+		"dev": "tsc -p tsconfig.build.json --watch",
+		"lint:raw": "eslint",
+		"lint": "pnpm run lint:raw ."
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/rjstudiosaustralia/DeFeedback.git",
+		"directory": "companion-module"
+	},
+	"bugs": {
+		"url": "https://github.com/rjstudiosaustralia/DeFeedback/issues"
+	},
+	"engines": {
+		"node": "^22.20",
+		"pnpm": ">=10"
+	},
+	"dependencies": {
+		"@companion-module/base": "2.0.4"
+	},
+	"devDependencies": {
+		"@companion-module/tools": "^3.1.0",
+		"@types/node": "^22.19.17",
+		"eslint": "^9.39.4",
+		"prettier": "^3.8.3",
+		"rimraf": "^6.1.3",
+		"typescript": "~6.0.3",
+		"typescript-eslint": "^8.59.0"
+	},
+	"prettier": "@companion-module/tools/.prettierrc.json",
+	"packageManager": "pnpm@11.19.0"
+}

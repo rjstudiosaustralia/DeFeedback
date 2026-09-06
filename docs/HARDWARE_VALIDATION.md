@@ -54,6 +54,9 @@ Record one row for each test. Do not infer untested lane counts.
 10. Repeat with console/interface returns connected at show gain only after the muted tests pass.
 11. Reboot and log in with the display disconnected, then verify launch-at-login and remote authentication from the reserved control address.
 12. Disconnect/reconnect the control client and network while audio runs; confirm CPU/XRuns and output state remain stable.
-13. Attempt duplicate browser routes and incorrect access codes; confirm routes remain exclusive and authentication is rate-limited.
-14. Record CPU with one or more lanes disabled; confirm their outputs remain silent and re-enable them while watching XRuns and retained Strength/plugin state.
-15. Run `pmset -g assertions`; confirm DeFeedback Live owns a `PreventUserIdleSystemSleep` assertion, then confirm it is released after quitting the app.
+13. Attempt duplicate browser routes and incorrect access codes; confirm routes remain exclusive and failed authentication is delayed.
+14. Reload and restart an authenticated browser; confirm it reconnects without another code, then use `LOG OUT` and confirm authentication is required.
+15. Change the access code and confirm both browser and Companion must re-authenticate.
+16. If no-code mode will be used, confirm the control network is isolated and that an untrusted LAN client cannot reach the port.
+17. Record CPU with one or more lanes disabled; confirm their outputs remain silent and re-enable them while watching XRuns and retained Strength/plugin state.
+18. Run `pmset -g assertions`; confirm DeFeedback Live owns a `PreventUserIdleSystemSleep` assertion while it is open, then confirm it is released after quitting the app.

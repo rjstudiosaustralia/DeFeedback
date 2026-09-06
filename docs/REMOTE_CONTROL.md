@@ -1,17 +1,20 @@
 # LAN remote control
 
-DeFeedback Live 0.5 adds an optional full-control browser interface for operating a monitor-free Apple Silicon Mac on a trusted local network.
+DeFeedback Live provides an optional full-control browser and Bitfocus Companion interface for operating a monitor-free Apple Silicon Mac on a trusted local network.
 
 ## Enable and connect
 
 1. Connect the Mac and control device to the same trusted private network.
 2. In DeFeedback Live, enable `Enable full-control LAN remote`.
-3. Use `COPY DETAILS` or note the displayed `http://IP-address:8765` address and eight-digit access code.
-4. Open the address in a current browser and enter the code.
-5. Enable `Launch at login` if the app should return after the macOS user logs in.
-6. Enable `Auto-start audio` only after the restored routes and output state have been qualified on the target system.
+3. Use `ACCESS` to enter your own 4–64-character code, generate a random one, or explicitly disable code protection.
+4. Use `COPY DETAILS` or note the displayed `http://IP-address:8765` address and access information.
+5. Open the address in a current browser and enter the code. A successful browser is remembered for one year.
+6. Enable `Launch at login` if the app should return after the macOS user logs in.
+7. Enable `Auto-start audio` only after the restored routes and output state have been qualified on the target system.
 
-The remote-enabled state and access code are saved. `NEW CODE` immediately restarts the listener and invalidates every existing browser session. Disabling the remote closes the listening socket and invalidates all sessions.
+The remote-enabled state, access mode, and code are saved. Applying any change in `ACCESS` immediately restarts the listener and invalidates every remembered browser. `LOG OUT` forgets the current browser. Simply disabling and re-enabling the remote closes/reopens the socket without making trusted browsers authenticate again.
+
+No-code mode is intended only for an isolated control network. It gives every device that can reach the Mac's remote port full control and is displayed as a red warning in both interfaces.
 
 ## Available controls
 
@@ -44,7 +47,11 @@ The preview server uses HTTP without transport encryption. The code and session 
 - disable the remote when it is not needed; and
 - always retain an independent console or hardware mute.
 
-The eight-digit code is stored in the app's settings file, which is restricted to the current macOS user. Login failures are rate-limited, authenticated sessions are memory-only, and the browser stores its session token only for that browser tab session. The page loads no third-party scripts, fonts, analytics, or cloud resources.
+The custom code and a separate random browser token are stored in the app's settings file, which is restricted to the current macOS user. Login failures are delayed, and the browser receives its token in an HttpOnly, SameSite=Strict cookie that lasts up to one year. The cookie cannot be read by page JavaScript. It is not marked `Secure` because this preview is served over ordinary LAN HTTP; network isolation remains essential. The page loads no third-party scripts, fonts, analytics, or cloud resources.
+
+## Bitfocus Companion
+
+Download the Companion `.tgz` from the matching GitHub release and import it in Companion 3.4 or newer. Add the DeFeedback Live connection using the Mac's address, port, and access code. Leave the code blank only when code protection is disabled. The module keeps its authentication cookie in memory, re-authenticates automatically, and exposes button/dial actions plus live feedbacks and variables. See [Bitfocus Companion control](COMPANION.md).
 
 ## Headless limitations and recovery
 

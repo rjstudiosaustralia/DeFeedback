@@ -12,11 +12,13 @@ It is deliberately not a general-purpose DAW. The operator selects one Core Audi
 
 ## Download
 
-### [Download DeFeedback Live 0.6.0 for Apple Silicon →](https://github.com/rjstudiosaustralia/DeFeedback/releases/download/v0.6.0/DeFeedback-Live-0.6.0-adhoc-arm64.zip)
+### [Download DeFeedback Live 0.7.0 for Apple Silicon →](https://github.com/rjstudiosaustralia/DeFeedback/releases/download/v0.7.0/DeFeedback-Live-0.7.0-adhoc-arm64.zip)
+
+### [Download the Bitfocus Companion module →](https://github.com/rjstudiosaustralia/DeFeedback/releases/download/v0.7.0/rjstudiosaustralia-defeedback-live-0.1.0.tgz)
 
 Or visit the [Latest release page](https://github.com/rjstudiosaustralia/DeFeedback/releases/latest) for release notes and the SHA-256 checksum.
 
-1. Download and unzip `DeFeedback-Live-0.6.0-adhoc-arm64.zip`.
+1. Download and unzip `DeFeedback-Live-0.7.0-adhoc-arm64.zip`.
 2. Move `DeFeedback Live.app` to the Applications folder.
 3. Install and activate the Alpha Labs De-Feedback Audio Unit separately.
 4. Open DeFeedback Live and begin with `MUTE ALL OUTPUTS` engaged.
@@ -27,7 +29,7 @@ Binary compatibility: Apple Silicon and macOS 13 Ventura or newer. Intel Macs ar
 
 ## Current status
 
-Version `0.6.0` is a working engineering preview:
+Version `0.7.0` is a working engineering preview:
 
 - arm64-only macOS application;
 - AUv2 hosting for De-Feedback 1.1.4 (`aufx/FbTI/jDSP`);
@@ -57,7 +59,9 @@ Version `0.6.0` is a working engineering preview:
 - an optional responsive LAN browser remote, disabled by default;
 - authenticated full control of devices, rate, buffer, engine, output mute, lanes, routing, per-lane plugin state, Strength, plugin Mute, bypass, meters, and XRuns;
 - immediate browser feedback and authoritative live reconciliation for plugin Mute and bypass;
-- a persistent eight-digit access code for monitor-free launch-at-login operation; and
+- operator-selected access-code protection, with custom and random codes or an explicitly warned no-code mode;
+- remembered browsers using an HttpOnly one-year cookie that is revoked by logout or any access-setting change;
+- a downloadable Bitfocus Companion module with ready-made master/lane buttons, rotary Strength control, feedbacks, and variables; and
 - duplicate-route prevention in both native and browser controls, with server-side validation.
 
 The app has been compiled and exercised on an M1 Max with the installed De-Feedback 1.1.4 demo. Multi-lane reliability and the practical CPU ceiling still need to be qualified on the target DVS, RME Digiface, and Focusrite RedNet TNX systems. Removing the software cap does not imply that every lane count is real-time safe. See [Hardware validation](docs/HARDWARE_VALIDATION.md).
@@ -82,14 +86,20 @@ A hard in-process AUv2 crash can still terminate the host before it can choose a
 
 ## LAN remote and headless use
 
-Enable `Enable full-control LAN remote` in the Mac app, then use `COPY DETAILS` to copy the displayed LAN address and eight-digit access code. The setting and code persist across restarts so a Mac configured with `Launch at login` can be controlled without a connected monitor after its user session has logged in. The server starts even when the saved audio device is unavailable, allowing the browser to refresh and select a newly connected interface.
+Use `ACCESS` to choose a custom code, generate a random code, or explicitly disable code protection. Then enable `Enable full-control LAN remote` and use `COPY DETAILS` to copy the displayed LAN address and access information. The setting and code persist across restarts so a Mac configured with `Launch at login` can be controlled without a connected monitor after its user session has logged in. A successfully authenticated browser is remembered for one year; `LOG OUT` or any access-code/protection change revokes it. The server starts even when the saved audio device is unavailable, allowing the browser to refresh and select a newly connected interface.
 
 The browser mirrors the operational host controls: Core Audio device refresh/selection, sample rate, buffer, engine start/stop, master mute/unmute, auto-start, launch-at-login, lane add/remove/name/routing, per-lane plugin on/off, Strength, plugin Mute, bypass, meters, CPU/latency/XRuns, and XRun reset. Native Audio Unit editor windows cannot be embedded in a browser; the exposed lane-strip controls remain available remotely.
 
-The remote is deliberately local and self-contained: the app serves its own page and does not require internet or a cloud account. It listens on TCP port `8765` on the Mac's active network interfaces only while enabled. Access requires the saved code, authenticated sessions are invalidated when the remote is disabled or the code is regenerated, and the settings file is restricted to the current macOS user.
+The remote is deliberately local and self-contained: the app serves its own page and does not require internet or a cloud account. It listens on TCP port `8765` on the Mac's active network interfaces only while enabled. Code protection is on by default, and the settings file containing the code and remembered-browser secret is restricted to the current macOS user. No-code mode is available for isolated control networks but gives every device that can reach the port full control.
 
 > [!WARNING]
-> The current preview uses ordinary HTTP, not encrypted HTTPS. Use it only on a trusted private production network or isolated control VLAN. Do not expose port `8765` to the internet, forward it through a router, or use the remote across public/shared Wi-Fi. Anyone who obtains the access code or an active session has full live-audio control, including engine start and output unmute. See [Remote control](docs/REMOTE_CONTROL.md) for setup, recovery, and validation details.
+> The current preview uses ordinary HTTP, not encrypted HTTPS. Use it only on a trusted private production network or isolated control VLAN. Do not expose port `8765` to the internet, forward it through a router, or use the remote across public/shared Wi-Fi. Anyone who obtains the access code or a remembered browser has full live-audio control, including engine start and output unmute. With code protection off, every reachable LAN client has that control. See [Remote control](docs/REMOTE_CONTROL.md) for setup, Companion, recovery, and validation details.
+
+## Bitfocus Companion
+
+The release includes an importable Companion `.tgz`. In Companion 3.4 or newer, use **Modules → Import module package**, add the **DeFeedback Live** connection, and enter the Mac address, port, and access code. Leave the code blank only if protection is disabled in the Mac app.
+
+The module includes ready-made master mute, engine, XRun, and per-lane plugin/mute/bypass/Strength presets. Its Strength preset responds to rotary left/right, and equivalent set/step actions can be assigned to any supported dial, fader, or button. Live feedbacks and variables report authoritative engine, master, lane, Strength, meter, CPU, latency, and XRun state. See [Companion setup](docs/COMPANION.md).
 
 `Launch at login` is a normal macOS login item, not a system daemon. After a reboot, a user must complete macOS/FileVault login before the app and remote can start. While open, DeFeedback Live asks macOS to block idle system sleep and App Nap; the display may still sleep, and closing the lid or explicitly choosing Sleep can still interrupt audio. For a monitor-free machine, reserve its IP address in DHCP or assign a stable control-network address and retain Screen Sharing or physical access as a recovery path.
 
@@ -105,6 +115,8 @@ The remote is deliberately local and self-contained: the app serves its own page
 - Xcode command-line tools;
 - CMake 3.25 or newer;
 - a JUCE licence appropriate for the builder's use and revenue/funding tier.
+
+Building the optional Companion module additionally requires Node.js 22 and pnpm 10 or newer.
 
 JUCE 9 is a pinned Git submodule and is licensed separately by Raw Material Software. The current JUCE Starter tier is free up to its published revenue/funding threshold; review the current JUCE terms before distributing or selling the app.
 
@@ -122,6 +134,15 @@ The debug app is written to:
 
 ```text
 build/DeFeedbackLive_artefacts/Debug/DeFeedback Live.app
+```
+
+Build and validate the Companion module with:
+
+```bash
+cd companion-module
+pnpm install --frozen-lockfile
+pnpm run lint
+pnpm run package
 ```
 
 Debug builds always use safe launch: they restore the setup but do not auto-start audio or register themselves as login items. Release builds follow the saved auto-start settings. Any build can be launched safely with `--safe`.
@@ -156,7 +177,7 @@ The latency number is the device-reported Core Audio input-plus-output latency. 
 
 ## Repository policy
 
-- The repository is public and open source under GNU AGPLv3.
+- The repository is public and the Mac app is open source under GNU AGPLv3. The Companion adapter is MIT licensed as required for portable Companion modules.
 - Never add `.component`, `.vst3`, activation, notarization, or signing files.
 - Pin JUCE updates and qualify them before changing the live build.
 - Hardware test results should be committed to `docs/HARDWARE_VALIDATION.md`.
