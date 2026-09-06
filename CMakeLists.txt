@@ -12,7 +12,7 @@ if(NOT DEFINED CMAKE_OSX_ARCHITECTURES OR CMAKE_OSX_ARCHITECTURES STREQUAL "")
     set(CMAKE_OSX_ARCHITECTURES arm64 CACHE STRING "Apple Silicon only" FORCE)
 endif()
 
-project(DeFeedbackLive VERSION 0.5.2 LANGUAGES C CXX OBJC OBJCXX)
+project(DeFeedbackLive VERSION 0.6.0 LANGUAGES C CXX OBJC OBJCXX)
 
 if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS DEFEEDBACK_MINIMUM_MACOS_VERSION)
     message(FATAL_ERROR
@@ -57,6 +57,7 @@ target_sources(DeFeedbackLive PRIVATE
     Source/PluginRegistration.mm
     Source/PluginWindow.cpp
     Source/RemoteControlServer.cpp
+    Source/SleepInhibitor.mm
     Source/SettingsStore.cpp)
 
 target_compile_definitions(DeFeedbackLive PRIVATE
@@ -73,6 +74,7 @@ target_compile_definitions(DeFeedbackLive PRIVATE
 target_link_libraries(DeFeedbackLive PRIVATE
     juce::juce_audio_utils
     juce::juce_gui_extra
+    "-framework IOKit"
     "-framework ServiceManagement"
     PUBLIC
     juce::juce_recommended_config_flags
@@ -87,6 +89,7 @@ if(DEFEEDBACK_BUILD_TESTS)
 
     target_sources(DeFeedbackTests PRIVATE
         Source/AppConfig.cpp
+        Source/MeterProcessor.cpp
         Tests/AppConfigTests.cpp)
 
     target_compile_definitions(DeFeedbackTests PRIVATE
@@ -97,6 +100,7 @@ if(DEFEEDBACK_BUILD_TESTS)
         juce::juce_core
         juce::juce_data_structures
         juce::juce_events
+        juce::juce_audio_processors
         PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)

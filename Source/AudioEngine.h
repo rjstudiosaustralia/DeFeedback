@@ -25,6 +25,7 @@ struct LaneStatus
     bool strengthAvailable = false;
     bool pluginMuteAvailable = false;
     bool pluginMuted = false;
+    bool pluginEnabled = true;
     float strengthNormalized = 1.0f;
     float inputPeak = 0.0f;
     float outputPeak = 0.0f;
@@ -75,6 +76,7 @@ public:
     void restorePluginWindows();
     void setLaneStrength (int laneIndex, float normalizedValue);
     void setLanePluginMuted (int laneIndex, bool shouldMute);
+    void setLanePluginEnabled (int laneIndex, bool shouldEnable);
     void setLaneName (int laneIndex, const juce::String& name);
 
 private:
@@ -85,6 +87,7 @@ private:
         MeterProcessor* outputMeter = nullptr;
         juce::AudioProcessorParameter* strengthParameter = nullptr;
         juce::AudioProcessorParameter* muteParameter = nullptr;
+        std::shared_ptr<std::atomic<bool>> inactiveOutputMute;
         juce::String status;
         bool dryFallback = false;
     };

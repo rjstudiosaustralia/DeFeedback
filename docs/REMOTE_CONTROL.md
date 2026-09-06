@@ -25,6 +25,7 @@ The browser can:
 - reset the session XRun counter;
 - add, remove, and rename lanes;
 - change exclusive mono input/output routes;
+- enable or suspend each De-Feedback instance without losing its route or settings;
 - adjust De-Feedback Strength and plugin Mute;
 - enable or disable dry bypass; and
 - change auto-start and launch-at-login preferences.
@@ -53,11 +54,13 @@ Before relying on monitor-free operation:
 
 1. verify launch-at-login after a full reboot;
 2. verify the Mac's control IP address remains stable;
-3. disable automatic sleep and qualify any OS update policy;
+3. verify `SYSTEM SLEEP BLOCKED` is shown, then qualify display-sleep, lid, explicit-sleep, and OS-update behavior for the installation;
 4. confirm remote access still works when the preferred interface is disconnected at launch;
 5. confirm device refresh and recovery after powering the interface later;
 6. test a complete browser disconnect/reconnect without interrupting audio; and
 7. retain Screen Sharing or physical keyboard/display access for recovery.
+
+While the app is running it holds a macOS assertion against idle system sleep and also disables App Nap. It does not override an explicit Sleep command or guarantee operation with a laptop lid closed. Verify the assertion on the target machine with `pmset -g assertions` during qualification.
 
 If the listener cannot bind to `8765`, the native app reports the error and leaves the remote off. Another local service may already be using that port.
 

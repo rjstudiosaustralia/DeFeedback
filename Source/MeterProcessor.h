@@ -8,7 +8,8 @@ class MeterProcessor final : public juce::AudioProcessor
 {
 public:
     explicit MeterProcessor (std::atomic<bool>* outputMute = nullptr,
-                             bool measureAfterMute = false);
+                             bool measureAfterMute = false,
+                             std::atomic<bool>* laneMute = nullptr);
 
     const juce::String getName() const override { return "Lane Meter"; }
     void prepareToPlay (double, int) override {}
@@ -38,6 +39,7 @@ private:
 
     std::atomic<float> peak { 0.0f };
     std::atomic<bool>* outputMute = nullptr;
+    std::atomic<bool>* perLaneMute = nullptr;
     bool measureAfterGate = false;
 };
 }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 — 2026-09-06
+
+- Added a per-lane `PLUGIN` on/off control in both the native rack and LAN browser remote.
+- Made an inactive lane suspend its De-Feedback processor and hard-gate its output to silence without discarding its route, parameters, plugin state, or editor layout.
+- Added neutral inactive lane styling and explicit `INACTIVE - OUTPUT SILENT` status reporting.
+- Added an idle-system-sleep assertion and App Nap prevention for the lifetime of the application, with status visible locally and remotely.
+- Added a compact 900-pixel-wide native layout and taller resize range for portrait displays while retaining full-size controls and vertical lane scrolling.
+- Persisted per-lane plugin activity with safe migration of older configurations to enabled.
+
 ## 0.5.2 — 2026-09-03
 
 - Corrected the deployment configuration so release binaries genuinely target macOS 13 instead of inheriting the build Mac's newer OS version.

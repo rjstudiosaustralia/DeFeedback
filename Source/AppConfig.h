@@ -14,6 +14,7 @@ struct LaneConfig
     juce::String pluginStateBase64;
     bool editorOpen = false;
     juce::String editorWindowState;
+    bool pluginEnabled = true;
 
     bool operator== (const LaneConfig&) const = default;
 };

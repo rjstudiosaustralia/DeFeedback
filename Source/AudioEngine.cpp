@@ -327,15 +327,20 @@ juce::Array<LaneStatus> AudioEngine::getLaneStatuses()
 {
     juce::Array<LaneStatus> result;
 
-    for (const auto& runtime : laneRuntimes)
+    for (int index = 0; index < static_cast<int> (laneRuntimes.size()); ++index)
     {
+        const auto& runtime = laneRuntimes[static_cast<size_t> (index)];
+        const auto pluginEnabled = juce::isPositiveAndBelow (index, lanes.size())
+                                 ? lanes[index].pluginEnabled
+                                 : true;
         LaneStatus status;
-        status.text = runtime.status;
+        status.text = pluginEnabled ? runtime.status : "INACTIVE - output silent";
         status.isDryFallback = runtime.dryFallback;
-        status.editorAvailable = runtime.pluginNode != nullptr;
-        status.strengthAvailable = runtime.strengthParameter != nullptr;
-        status.pluginMuteAvailable = runtime.muteParameter != nullptr;
+        status.editorAvailable = pluginEnabled && runtime.pluginNode != nullptr;
+        status.strengthAvailable = pluginEnabled && runtime.strengthParameter != nullptr;
+        status.pluginMuteAvailable = pluginEnabled && runtime.muteParameter != nullptr;
         status.pluginMuted = runtime.muteParameter != nullptr && runtime.muteParameter->getValue() >= 0.5f;
+        status.pluginEnabled = pluginEnabled;
         status.strengthNormalized = runtime.strengthParameter != nullptr
                                   ? runtime.strengthParameter->getValue()
                                   : 1.0f;
@@ -350,6 +355,9 @@ juce::Array<LaneStatus> AudioEngine::getLaneStatuses()
 void AudioEngine::openPluginEditor (int laneIndex)
 {
     if (! juce::isPositiveAndBelow (laneIndex, static_cast<int> (laneRuntimes.size())))
+        return;
+
+    if (! juce::isPositiveAndBelow (laneIndex, lanes.size()) || ! lanes[laneIndex].pluginEnabled)
         return;
 
     auto node = laneRuntimes[static_cast<size_t> (laneIndex)].pluginNode;
@@ -419,6 +427,58 @@ void AudioEngine::setLanePluginMuted (int laneIndex, bool shouldMute)
         parameter->setValueNotifyingHost (shouldMute ? 1.0f : 0.0f);
         parameter->endChangeGesture();
     }
+}
+
+void AudioEngine::setLanePluginEnabled (int laneIndex, bool shouldEnable)
+{
+    if (! juce::isPositiveAndBelow (laneIndex, lanes.size())
+        || ! juce::isPositiveAndBelow (laneIndex, static_cast<int> (laneRuntimes.size())))
+        return;
+
+    auto& lane = lanes.getReference (laneIndex);
+    auto& runtime = laneRuntimes[static_cast<size_t> (laneIndex)];
+    if (lane.pluginEnabled == shouldEnable)
+        return;
+
+    lane.pluginEnabled = shouldEnable;
+
+    if (runtime.inactiveOutputMute != nullptr)
+        runtime.inactiveOutputMute->store (! shouldEnable, std::memory_order_release);
+
+    if (runtime.pluginNode != nullptr)
+    {
+        auto* processor = runtime.pluginNode->getProcessor();
+        if (! shouldEnable)
+        {
+            processor->suspendProcessing (true);
+            juce::MemoryBlock state;
+            processor->getStateInformation (state);
+            lane.pluginStateBase64 = state.toBase64Encoding();
+        }
+        else
+        {
+            processor->reset();
+            processor->suspendProcessing (false);
+        }
+
+        if (! shouldEnable)
+        {
+            for (int windowIndex = pluginWindows.size(); --windowIndex >= 0;)
+            {
+                auto* window = pluginWindows[windowIndex];
+                if (window->getNode() == runtime.pluginNode)
+                {
+                    lane.editorOpen = true;
+                    lane.editorWindowState = window->captureWindowState();
+                    pluginWindows.remove (windowIndex);
+                }
+            }
+        }
+        else if (lane.editorOpen)
+            openPluginEditor (laneIndex);
+    }
+
+    sendChangeMessage();
 }
 
 void AudioEngine::setLaneName (int laneIndex, const juce::String& name)
@@ -516,6 +576,7 @@ juce::String AudioEngine::rebuildGraph()
     {
         auto& lane = lanes.getReference (laneIndex);
         LaneRuntime runtime;
+        runtime.inactiveOutputMute = std::make_shared<std::atomic<bool>> (! lane.pluginEnabled);
 
         if (! juce::isPositiveAndBelow (lane.inputChannel, inputSpan)
             || ! juce::isPositiveAndBelow (lane.outputChannel, outputSpan))
@@ -581,6 +642,9 @@ juce::String AudioEngine::rebuildGraph()
                 runtime.pluginNode = graph.addNode (std::move (instance));
                 bindPluginParameters (runtime);
 
+                if (runtime.pluginNode != nullptr)
+                    runtime.pluginNode->getProcessor()->suspendProcessing (! lane.pluginEnabled);
+
                 const auto connectedToPlugin = runtime.pluginNode != nullptr
                                             && graph.addConnection ({ { inputMeterNode->nodeID, 0 },
                                                                        { runtime.pluginNode->nodeID, 0 } });
@@ -614,7 +678,9 @@ juce::String AudioEngine::rebuildGraph()
             runtime.dryFallback = true;
         }
 
-        auto outputMeter = std::make_unique<MeterProcessor> (&emergencyMuted, true);
+        auto outputMeter = std::make_unique<MeterProcessor> (&emergencyMuted,
+                                                              true,
+                                                              runtime.inactiveOutputMute.get());
         runtime.outputMeter = outputMeter.get();
         auto outputMeterNode = graph.addNode (std::move (outputMeter));
 
@@ -676,7 +742,8 @@ void AudioEngine::reopenSavedPluginWindows()
 {
     for (int laneIndex = 0; laneIndex < lanes.size(); ++laneIndex)
     {
-        if (lanes.getReference (laneIndex).editorOpen)
+        if (lanes.getReference (laneIndex).pluginEnabled
+            && lanes.getReference (laneIndex).editorOpen)
             openPluginEditor (laneIndex);
     }
 }

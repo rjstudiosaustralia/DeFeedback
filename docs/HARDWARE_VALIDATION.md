@@ -11,10 +11,12 @@ A configuration is considered show-ready only when all of the following pass:
 - plugin state and routing restore after a clean reboot;
 - device power-cycle causes a clear stopped/error state and recovers without unexpected output;
 - no unprocessed parallel path exists in the interface, Dante, or console routing;
-- trial mode is replaced by a valid live licence.
+- trial mode is replaced by a valid live licence;
 - the disabled LAN remote leaves TCP `8765` closed;
 - remote reconnect, device refresh, lane editing, engine stop/start, and master mute/unmute behave correctly; and
-- losing the browser or control network does not interrupt audio or change the last commanded state.
+- losing the browser or control network does not interrupt audio or change the last commanded state;
+- disabling a lane silences its output, lowers plugin CPU load, and restores the same route/settings without a graph interruption when re-enabled; and
+- `pmset -g assertions` reports the app's idle-system-sleep prevention assertion while it is open.
 
 ## Development baseline
 
@@ -53,3 +55,5 @@ Record one row for each test. Do not infer untested lane counts.
 11. Reboot and log in with the display disconnected, then verify launch-at-login and remote authentication from the reserved control address.
 12. Disconnect/reconnect the control client and network while audio runs; confirm CPU/XRuns and output state remain stable.
 13. Attempt duplicate browser routes and incorrect access codes; confirm routes remain exclusive and authentication is rate-limited.
+14. Record CPU with one or more lanes disabled; confirm their outputs remain silent and re-enable them while watching XRuns and retained Strength/plugin state.
+15. Run `pmset -g assertions`; confirm DeFeedback Live owns a `PreventUserIdleSystemSleep` assertion, then confirm it is released after quitting the app.

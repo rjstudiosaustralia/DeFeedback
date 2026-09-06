@@ -1,4 +1,5 @@
 #include "../Source/AppConfig.h"
+#include "../Source/MeterProcessor.h"
 
 #include <iostream>
 
@@ -31,7 +32,7 @@ int main()
     original.mainWindowState = "1080 720 40 60";
     original.lanes.clear();
     original.lanes.add ({ 1, "Lead", 7, 11, false, "YWJj", true, "420 560 80 90" });
-    original.lanes.add ({ 2, "MC", 3, 5, true, {}, false, {} });
+    original.lanes.add ({ 2, "MC", 3, 5, true, {}, false, {}, false });
 
     auto restored = AppConfig::fromXml (*original.toXml());
     expect (restored.inputDeviceName == original.inputDeviceName, "input device round-trip");
@@ -59,6 +60,12 @@ int main()
     juce::XmlElement empty ("DEFEEDBACK_LIVE_CONFIG");
     expect (AppConfig::fromXml (empty).lanes.size() == 1, "empty config restores one safe lane");
 
+    juce::XmlElement legacy ("DEFEEDBACK_LIVE_CONFIG");
+    legacy.setAttribute ("formatVersion", 3);
+    legacy.createNewChildElement ("LANE")->setAttribute ("id", 1);
+    expect (AppConfig::fromXml (legacy).lanes[0].pluginEnabled,
+            "lanes saved before plugin enable existed remain enabled");
+
     juce::Array<LaneConfig> exclusiveRoutes;
     exclusiveRoutes.add ({ 1, "One", 0, 0, false, {}, false, {} });
     exclusiveRoutes.add ({ 2, "Two", 1, 1, false, {}, false, {} });
@@ -68,6 +75,26 @@ int main()
     exclusiveRoutes.getReference (1).inputChannel = 1;
     exclusiveRoutes.getReference (1).outputChannel = 0;
     expect (validateExclusiveRoutes (exclusiveRoutes).startsWith ("Output"), "duplicate output is rejected");
+
+    std::atomic<bool> inactiveLane { false };
+    MeterProcessor laneOutputGate (nullptr, true, &inactiveLane);
+    juce::AudioBuffer<float> samples (1, 32);
+    juce::MidiBuffer midi;
+    for (int sample = 0; sample < samples.getNumSamples(); ++sample)
+        samples.setSample (0, sample, 0.5f);
+    laneOutputGate.processBlock (samples, midi);
+    expect (std::abs (samples.getMagnitude (0, 0, samples.getNumSamples()) - 0.5f) < 0.0001f,
+            "active lane output passes audio");
+    laneOutputGate.consumePeak();
+
+    inactiveLane.store (true);
+    for (int sample = 0; sample < samples.getNumSamples(); ++sample)
+        samples.setSample (0, sample, 0.5f);
+    laneOutputGate.processBlock (samples, midi);
+    expect (samples.getMagnitude (0, 0, samples.getNumSamples()) == 0.0f,
+            "inactive lane output is hard-gated to silence");
+    expect (laneOutputGate.consumePeak() == 0.0f,
+            "inactive lane post-gate meter reports silence");
 
     if (failures == 0)
         std::cout << "All DeFeedback configuration tests passed.\n";

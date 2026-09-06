@@ -4,6 +4,7 @@
 #include "AudioEngine.h"
 #include "RemoteControlServer.h"
 #include "SettingsStore.h"
+#include "SleepInhibitor.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
@@ -48,6 +49,7 @@ private:
 
     SettingsStore settings;
     AppConfig config;
+    SleepInhibitor sleepInhibitor;
     AudioEngine engine;
     RemoteControlServer remoteControlServer;
 

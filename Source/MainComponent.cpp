@@ -47,6 +47,7 @@ struct LaneGeometry
     juce::Rectangle<int> input;
     juce::Rectangle<int> inputMeter;
     juce::Rectangle<int> strength;
+    juce::Rectangle<int> pluginEnable;
     juce::Rectangle<int> editor;
     juce::Rectangle<int> pluginMute;
     juce::Rectangle<int> bypass;
@@ -59,31 +60,34 @@ struct LaneGeometry
 LaneGeometry calculateLaneGeometry (juce::Rectangle<int> bounds)
 {
     LaneGeometry layout;
-    auto area = bounds.reduced (8, 0);
+    const auto compact = bounds.getWidth() < 1180;
+    auto area = bounds.reduced (compact ? 6 : 8, 0);
 
-    layout.number = area.removeFromLeft (30);
-    area.removeFromLeft (6);
-    layout.name = area.removeFromLeft (112);
-    area.removeFromLeft (8);
-    layout.input = area.removeFromLeft (140);
-    area.removeFromLeft (8);
-    layout.inputMeter = area.removeFromLeft (70);
-    area.removeFromLeft (10);
+    layout.number = area.removeFromLeft (compact ? 24 : 30);
+    area.removeFromLeft (compact ? 4 : 6);
+    layout.name = area.removeFromLeft (compact ? 82 : 112);
+    area.removeFromLeft (compact ? 5 : 8);
+    layout.input = area.removeFromLeft (compact ? 104 : 140);
+    area.removeFromLeft (compact ? 5 : 8);
+    layout.inputMeter = area.removeFromLeft (compact ? 42 : 70);
+    area.removeFromLeft (compact ? 6 : 10);
 
-    layout.remove = area.removeFromRight (32);
-    area.removeFromRight (6);
-    layout.status = area.removeFromRight (120);
-    area.removeFromRight (8);
-    layout.output = area.removeFromRight (140);
-    area.removeFromRight (8);
-    layout.outputMeter = area.removeFromRight (70);
-    area.removeFromRight (10);
-    layout.bypass = area.removeFromRight (82);
-    area.removeFromRight (8);
-    layout.pluginMute = area.removeFromRight (82);
-    area.removeFromRight (8);
-    layout.editor = area.removeFromRight (48);
-    area.removeFromRight (10);
+    layout.remove = area.removeFromRight (compact ? 28 : 32);
+    area.removeFromRight (compact ? 4 : 6);
+    layout.status = area.removeFromRight (compact ? 72 : 120);
+    area.removeFromRight (compact ? 5 : 8);
+    layout.output = area.removeFromRight (compact ? 104 : 140);
+    area.removeFromRight (compact ? 5 : 8);
+    layout.outputMeter = area.removeFromRight (compact ? 42 : 70);
+    area.removeFromRight (compact ? 6 : 10);
+    layout.bypass = area.removeFromRight (compact ? 60 : 82);
+    area.removeFromRight (compact ? 5 : 8);
+    layout.pluginMute = area.removeFromRight (compact ? 60 : 82);
+    area.removeFromRight (compact ? 5 : 8);
+    layout.editor = area.removeFromRight (compact ? 36 : 48);
+    area.removeFromRight (compact ? 5 : 8);
+    layout.pluginEnable = area.removeFromRight (compact ? 60 : 74);
+    area.removeFromRight (compact ? 6 : 10);
     layout.strength = area;
 
     return layout;
@@ -124,6 +128,7 @@ public:
         initialise (input, "INPUT");
         initialise (inputLevel, "INPUT LEVEL", juce::Justification::centred);
         initialise (strength, "STRENGTH");
+        initialise (pluginEnable, "PLUGIN", juce::Justification::centred);
         initialise (editor, "UI", juce::Justification::centred);
         initialise (pluginMute, "PLUGIN MUTE", juce::Justification::centred);
         initialise (bypass, "BYPASS", juce::Justification::centred);
@@ -146,6 +151,7 @@ public:
         input.setBounds (layout.input);
         inputLevel.setBounds (layout.inputMeter);
         strength.setBounds (layout.strength);
+        pluginEnable.setBounds (layout.pluginEnable);
         editor.setBounds (layout.editor);
         pluginMute.setBounds (layout.pluginMute);
         bypass.setBounds (layout.bypass);
@@ -171,6 +177,7 @@ private:
     juce::Label input;
     juce::Label inputLevel;
     juce::Label strength;
+    juce::Label pluginEnable;
     juce::Label editor;
     juce::Label pluginMute;
     juce::Label bypass;
@@ -207,6 +214,20 @@ public:
         outputCombo.onChange = [this] { commit(); };
         addAndMakeVisible (inputCombo);
         addAndMakeVisible (outputCombo);
+
+        pluginEnableToggle.setToggleState (config.pluginEnabled, juce::dontSendNotification);
+        pluginEnableToggle.setButtonText (config.pluginEnabled ? "ON" : "OFF");
+        pluginEnableToggle.setColour (juce::ToggleButton::textColourId, green);
+        pluginEnableToggle.setTooltip ("Suspend this De-Feedback instance and silence the lane without losing its route or settings.");
+        pluginEnableToggle.onClick = [this]
+        {
+            const auto enabled = pluginEnableToggle.getToggleState();
+            config.pluginEnabled = enabled;
+            pluginEnableToggle.setButtonText (enabled ? "ON" : "OFF");
+            if (onPluginEnabledChanged != nullptr)
+                onPluginEnabledChanged (index, enabled);
+        };
+        addAndMakeVisible (pluginEnableToggle);
 
         dryToggle.setToggleState (config.dry, juce::dontSendNotification);
         dryToggle.setColour (juce::ToggleButton::textColourId, amber);
@@ -277,6 +298,7 @@ public:
         result.inputChannel = juce::jmax (0, inputCombo.getSelectedId() - 1);
         result.outputChannel = juce::jmax (0, outputCombo.getSelectedId() - 1);
         result.dry = dryToggle.getToggleState();
+        result.pluginEnabled = pluginEnableToggle.getToggleState();
         return result;
     }
 
@@ -300,7 +322,12 @@ public:
         auto displayStatus = status.text;
         auto nextAccent = green;
 
-        if (! engineRunning)
+        if (! status.pluginEnabled)
+        {
+            displayStatus = "INACTIVE";
+            nextAccent = mutedText;
+        }
+        else if (! engineRunning)
         {
             displayStatus = "ENGINE STOPPED";
             nextAccent = mutedText;
@@ -329,6 +356,8 @@ public:
         rowAccent = nextAccent;
         statusLabel.setText (displayStatus, juce::dontSendNotification);
         statusLabel.setColour (juce::Label::textColourId, rowAccent);
+        pluginEnableToggle.setToggleState (status.pluginEnabled, juce::dontSendNotification);
+        pluginEnableToggle.setButtonText (status.pluginEnabled ? "ON" : "OFF");
         editorButton.setEnabled (status.editorAvailable);
         strengthSlider.setEnabled (status.strengthAvailable);
         pluginMuteToggle.setEnabled (status.pluginMuteAvailable);
@@ -358,6 +387,7 @@ public:
         inputCombo.setBounds (layout.input.withSizeKeepingCentre (layout.input.getWidth(), 34));
         inputMeter.setBounds (layout.inputMeter.withSizeKeepingCentre (layout.inputMeter.getWidth(), 10));
         strengthSlider.setBounds (layout.strength.withSizeKeepingCentre (layout.strength.getWidth(), 30));
+        pluginEnableToggle.setBounds (layout.pluginEnable.withSizeKeepingCentre (layout.pluginEnable.getWidth(), 30));
         editorButton.setBounds (layout.editor.withSizeKeepingCentre (layout.editor.getWidth(), 34));
         pluginMuteToggle.setBounds (layout.pluginMute.withSizeKeepingCentre (layout.pluginMute.getWidth(), 30));
         dryToggle.setBounds (layout.bypass.withSizeKeepingCentre (layout.bypass.getWidth(), 30));
@@ -372,6 +402,7 @@ public:
     std::function<void(int)> onOpenEditor;
     std::function<void(int)> onRemove;
     std::function<void(int, float)> onStrengthChanged;
+    std::function<void(int, bool)> onPluginEnabledChanged;
     std::function<void(int, bool)> onPluginMuteChanged;
 
 private:
@@ -410,6 +441,7 @@ private:
     PeakMeter inputMeter;
     PeakMeter outputMeter;
     juce::Slider strengthSlider;
+    juce::ToggleButton pluginEnableToggle;
     juce::ToggleButton pluginMuteToggle { "MUTE" };
     juce::TextButton editorButton { "UI" };
     juce::TextButton removeButton { "X" };
@@ -426,8 +458,11 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
     titleLabel.setColour (juce::Label::textColourId, text);
     addAndMakeVisible (titleLabel);
 
-    subtitleLabel.setText ("Apple Silicon live Audio Unit host", juce::dontSendNotification);
-    subtitleLabel.setColour (juce::Label::textColourId, mutedText);
+    subtitleLabel.setText (sleepInhibitor.isActive()
+                               ? "Apple Silicon live Audio Unit host  |  SYSTEM SLEEP BLOCKED"
+                               : "Apple Silicon live Audio Unit host  |  SLEEP BLOCK FAILED",
+                           juce::dontSendNotification);
+    subtitleLabel.setColour (juce::Label::textColourId, sleepInhibitor.isActive() ? mutedText : red);
     addAndMakeVisible (subtitleLabel);
 
     aboutButton.setTooltip ("Independence, licence, warranty, and live-audio safety notice.");
@@ -445,7 +480,9 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
             "Live feedback and routing errors can cause dangerous sound levels, hearing injury, or equipment damage. "
             "Begin muted, verify every route, and retain an independent hardware or console mute.\n\n"
             "The optional LAN remote has full live-audio control and uses unencrypted HTTP. "
-            "Enable it only on a trusted private network; never expose TCP port 8765 to the internet or shared Wi-Fi.");
+            "Enable it only on a trusted private network; never expose TCP port 8765 to the internet or shared Wi-Fi.\n\n"
+            "While this app is open, it asks macOS to prevent idle system sleep and App Nap. "
+            "The display may still sleep; closing the lid or explicitly choosing Sleep can still interrupt audio.");
     };
     addAndMakeVisible (aboutButton);
 
@@ -660,6 +697,9 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
     rebuildLaneRows();
     updateRuntimeStatus();
 
+    if (! sleepInhibitor.isActive())
+        showMessage ("Could not prevent macOS idle sleep: " + sleepInhibitor.getError(), true);
+
     if (config.remoteControlEnabled)
     {
         if (config.remoteAccessCode.isEmpty())
@@ -707,7 +747,8 @@ void MainComponent::paint (juce::Graphics& g)
 {
     g.fillAll (background);
 
-    auto topPanel = juce::Rectangle<int> (20, 76, getWidth() - 40, 196).toFloat();
+    const auto setupPanelHeight = getWidth() < 1180 ? 260 : 196;
+    auto topPanel = juce::Rectangle<int> (20, 76, getWidth() - 40, setupPanelHeight).toFloat();
     g.setColour (panel);
     g.fillRoundedRectangle (topPanel, 8.0f);
     g.setColour (border);
@@ -716,17 +757,19 @@ void MainComponent::paint (juce::Graphics& g)
 
 void MainComponent::resized()
 {
+    const auto compact = getWidth() < 1180;
+    const auto setupPanelHeight = compact ? 260 : 196;
     auto area = getLocalBounds().reduced (20);
     auto heading = area.removeFromTop (46);
-    aboutButton.setBounds (heading.removeFromRight (150).reduced (4, 7));
-    titleLabel.setBounds (heading.removeFromLeft (360));
+    aboutButton.setBounds (heading.removeFromRight (compact ? 120 : 150).reduced (4, 7));
+    titleLabel.setBounds (heading.removeFromLeft (compact ? 250 : 360));
     subtitleLabel.setBounds (heading);
     area.removeFromTop (10);
 
-    auto setupPanel = area.removeFromTop (196).reduced (16, 12);
+    auto setupPanel = area.removeFromTop (setupPanelHeight).reduced (16, 12);
     auto firstLine = setupPanel.removeFromTop (54);
 
-    auto deviceArea = firstLine.removeFromLeft (300);
+    auto deviceArea = firstLine.removeFromLeft (compact ? 250 : 300);
     deviceLabel.setBounds (deviceArea.removeFromTop (18));
     deviceCombo.setBounds (deviceArea.removeFromTop (30));
     firstLine.removeFromLeft (8);
@@ -736,30 +779,34 @@ void MainComponent::resized()
     refreshDevicesButton.setBounds (refreshArea.removeFromTop (30));
     firstLine.removeFromLeft (12);
 
-    auto rateArea = firstLine.removeFromLeft (120);
+    auto rateArea = firstLine.removeFromLeft (compact ? 110 : 120);
     rateLabel.setBounds (rateArea.removeFromTop (18));
     rateCombo.setBounds (rateArea.removeFromTop (30));
     firstLine.removeFromLeft (12);
 
-    auto bufferArea = firstLine.removeFromLeft (130);
+    auto bufferArea = firstLine.removeFromLeft (compact ? 120 : 130);
     bufferLabel.setBounds (bufferArea.removeFromTop (18));
     bufferCombo.setBounds (bufferArea.removeFromTop (30));
     firstLine.removeFromLeft (12);
 
-    auto engineArea = firstLine.removeFromLeft (140);
+    auto transportLine = compact ? setupPanel.removeFromTop (54) : firstLine;
+    auto engineArea = transportLine.removeFromLeft (compact ? 160 : 140);
     engineLabel.setBounds (engineArea.removeFromTop (18));
     startStopButton.setBounds (engineArea.removeFromTop (30));
-    firstLine.removeFromLeft (10);
+    transportLine.removeFromLeft (10);
 
-    auto safetyArea = firstLine;
+    auto safetyArea = compact ? transportLine.removeFromLeft (280) : transportLine;
     outputSafetyLabel.setBounds (safetyArea.removeFromTop (18));
     emergencyButton.setBounds (safetyArea.removeFromTop (30));
+    if (compact)
+        metricsLabel.setBounds (transportLine);
 
     auto secondLine = setupPanel.removeFromTop (38);
     autoStartToggle.setBounds (secondLine.removeFromLeft (155));
     launchAtLoginToggle.setBounds (secondLine.removeFromLeft (145));
     resetXRunsButton.setBounds (secondLine.removeFromLeft (112).reduced (2, 5));
-    metricsLabel.setBounds (secondLine);
+    if (! compact)
+        metricsLabel.setBounds (secondLine);
 
     pluginLabel.setBounds (setupPanel.removeFromTop (24));
     auto remoteLine = setupPanel.removeFromTop (42);
@@ -899,6 +946,22 @@ void MainComponent::rebuildLaneRows()
         row->onStrengthChanged = [this] (int lane, float strength)
         {
             engine.setLaneStrength (lane, strength);
+        };
+        row->onPluginEnabledChanged = [this] (int lane, bool enabled)
+        {
+            if (! juce::isPositiveAndBelow (lane, config.lanes.size()))
+                return;
+
+            config.lanes.getReference (lane).pluginEnabled = enabled;
+           #if ! DEFEEDBACK_UI_PREVIEW
+            engine.setLanePluginEnabled (lane, enabled);
+           #endif
+            showMessage (enabled
+                             ? "Lane plugin enabled."
+                             : "Lane plugin suspended; this lane's output is silent.",
+                         false);
+            updateRuntimeStatus();
+            saveConfig();
         };
         row->onPluginMuteChanged = [this] (int lane, bool muted)
         {
@@ -1114,15 +1177,18 @@ void MainComponent::updateRuntimeStatus()
     for (int index = 0; index < laneRows.size(); ++index)
     {
         LaneStatus status;
-        status.text = index == 3 ? "INVALID ROUTE" : (config.lanes[index].dry ? "BYPASSED - dry pass" : "PROCESSED");
+        status.pluginEnabled = config.lanes[index].pluginEnabled;
+        status.text = ! status.pluginEnabled
+                        ? "INACTIVE - output silent"
+                        : (index == 3 ? "INVALID ROUTE" : (config.lanes[index].dry ? "BYPASSED - dry pass" : "PROCESSED"));
         status.isDryFallback = config.lanes[index].dry || index == 3;
-        status.editorAvailable = true;
-        status.strengthAvailable = true;
-        status.pluginMuteAvailable = true;
+        status.editorAvailable = status.pluginEnabled;
+        status.strengthAvailable = status.pluginEnabled;
+        status.pluginMuteAvailable = status.pluginEnabled;
         status.pluginMuted = previewMutedLaneIds.contains (config.lanes[index].id);
         status.strengthNormalized = index == 0 ? 0.53f : (index == 1 ? 0.75f : (index == 2 ? 0.72f : 1.0f));
         status.inputPeak = index == 0 ? 0.55f : 0.25f;
-        status.outputPeak = status.pluginMuted || index == 3 ? 0.0f : 0.35f;
+        status.outputPeak = ! status.pluginEnabled || status.pluginMuted || index == 3 ? 0.0f : 0.35f;
         statuses.add (status);
     }
     const auto engineRunning = previewEngineRunning;
@@ -1139,6 +1205,7 @@ void MainComponent::updateRuntimeStatus()
    #endif
     auto bypassCount = 0;
     auto pluginMuteCount = 0;
+    auto inactiveCount = 0;
     auto errorCount = 0;
     for (int index = 0; index < laneRows.size(); ++index)
     {
@@ -1146,7 +1213,9 @@ void MainComponent::updateRuntimeStatus()
         {
             laneRows[index]->setStatus (statuses[index], engineRunning, masterMuted);
 
-            if (statuses[index].pluginMuted)
+            if (! statuses[index].pluginEnabled)
+                ++inactiveCount;
+            else if (statuses[index].pluginMuted)
                 ++pluginMuteCount;
             else if (statuses[index].text.containsIgnoreCase ("invalid")
                      || statuses[index].text.containsIgnoreCase ("duplicate"))
@@ -1214,6 +1283,15 @@ void MainComponent::updateRuntimeStatus()
                             juce::dontSendNotification);
         alertLabel.setColour (juce::Label::backgroundColourId, juce::Colour (0xff65421d));
         alertLabel.setColour (juce::Label::textColourId, juce::Colour (0xffffddb0));
+    }
+    else if (inactiveCount > 0)
+    {
+        alertLabel.setText (juce::String (inactiveCount)
+                                + (inactiveCount == 1 ? " LANE INACTIVE" : " LANES INACTIVE")
+                                + " | OUTPUT SILENT | DE-FEEDBACK DSP SUSPENDED",
+                            juce::dontSendNotification);
+        alertLabel.setColour (juce::Label::backgroundColourId, juce::Colour (0xff27313a));
+        alertLabel.setColour (juce::Label::textColourId, juce::Colour (0xffc7d2da));
     }
     else if (engineRunning)
     {
@@ -1294,6 +1372,7 @@ void MainComponent::publishRemoteState (const juce::Array<LaneStatus>& statuses,
     root->setProperty ("masterMuted", masterMuted);
     root->setProperty ("autoStart", config.autoStart);
     root->setProperty ("launchAtLogin", config.launchAtLogin);
+    root->setProperty ("sleepPrevented", sleepInhibitor.isActive());
 
    #if DEFEEDBACK_UI_PREVIEW
     root->setProperty ("latencyMs", 4.0);
@@ -1394,6 +1473,7 @@ void MainComponent::publishRemoteState (const juce::Array<LaneStatus>& statuses,
         laneObject->setProperty ("inputChannel", lane.inputChannel);
         laneObject->setProperty ("outputChannel", lane.outputChannel);
         laneObject->setProperty ("dry", lane.dry);
+        laneObject->setProperty ("pluginEnabled", status.pluginEnabled);
         laneObject->setProperty ("dryFallback", status.isDryFallback);
         laneObject->setProperty ("pluginMuted", status.pluginMuted);
         laneObject->setProperty ("pluginMuteAvailable", status.pluginMuteAvailable);
@@ -1403,7 +1483,9 @@ void MainComponent::publishRemoteState (const juce::Array<LaneStatus>& statuses,
         laneObject->setProperty ("outputPeak", status.outputPeak);
 
         auto displayStatus = status.text;
-        if (! engineRunning)
+        if (! status.pluginEnabled)
+            displayStatus = "INACTIVE - OUTPUT SILENT";
+        else if (! engineRunning)
             displayStatus = "ENGINE STOPPED";
         else if (masterMuted)
             displayStatus = "OUTPUT MUTED";
@@ -1599,6 +1681,24 @@ void MainComponent::handleRemoteCommand (const juce::var& command)
        #else
         juce::ignoreUnused (value);
        #endif
+    }
+    else if (type == "setLanePluginEnabled")
+    {
+        const auto index = findLaneIndexById (static_cast<int> (command.getProperty ("id", -1)));
+        if (! juce::isPositiveAndBelow (index, config.lanes.size()))
+            return;
+
+        const auto enabled = static_cast<bool> (command.getProperty ("enabled", true));
+        config.lanes.getReference (index).pluginEnabled = enabled;
+       #if ! DEFEEDBACK_UI_PREVIEW
+        engine.setLanePluginEnabled (index, enabled);
+       #endif
+        showMessage (enabled
+                         ? "Lane plugin enabled remotely."
+                         : "Lane plugin suspended remotely; this lane's output is silent.",
+                     false);
+        updateRuntimeStatus();
+        saveConfig();
     }
     else if (type == "setLanePluginMuted")
     {

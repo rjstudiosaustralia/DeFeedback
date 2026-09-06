@@ -16,7 +16,7 @@ public:
         mainContent = new MainComponent (safeLaunch);
         setContentOwned (mainContent, true);
         setResizable (true, true);
-        setResizeLimits (1260, 660, 1800, 1200);
+        setResizeLimits (900, 700, 1800, 1800);
 
         if (mainContent->getSavedMainWindowState().isEmpty()
             || ! restoreWindowStateFromString (mainContent->getSavedMainWindowState()))

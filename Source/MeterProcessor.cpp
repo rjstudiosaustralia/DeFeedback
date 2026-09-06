@@ -2,11 +2,14 @@
 
 namespace defeedback
 {
-MeterProcessor::MeterProcessor (std::atomic<bool>* muteFlag, bool measureAfterMute)
+MeterProcessor::MeterProcessor (std::atomic<bool>* muteFlag,
+                                bool measureAfterMute,
+                                std::atomic<bool>* laneMute)
     : AudioProcessor (BusesProperties()
                           .withInput ("Input", juce::AudioChannelSet::mono(), true)
                           .withOutput ("Output", juce::AudioChannelSet::mono(), true)),
       outputMute (muteFlag),
+      perLaneMute (laneMute),
       measureAfterGate (measureAfterMute)
 {
 }
@@ -36,7 +39,8 @@ void MeterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     if (! measureAfterGate)
         updatePeak (buffer);
 
-    if (outputMute != nullptr && outputMute->load (std::memory_order_relaxed))
+    if ((outputMute != nullptr && outputMute->load (std::memory_order_relaxed))
+        || (perLaneMute != nullptr && perLaneMute->load (std::memory_order_relaxed)))
         buffer.clear();
 
     if (measureAfterGate)
@@ -48,7 +52,8 @@ void MeterProcessor::processBlock (juce::AudioBuffer<double>& buffer, juce::Midi
     if (! measureAfterGate)
         updatePeak (buffer);
 
-    if (outputMute != nullptr && outputMute->load (std::memory_order_relaxed))
+    if ((outputMute != nullptr && outputMute->load (std::memory_order_relaxed))
+        || (perLaneMute != nullptr && perLaneMute->load (std::memory_order_relaxed)))
         buffer.clear();
 
     if (measureAfterGate)

@@ -10,7 +10,7 @@ AppConfig::AppConfig()
 std::unique_ptr<juce::XmlElement> AppConfig::toXml() const
 {
     auto root = std::make_unique<juce::XmlElement> ("DEFEEDBACK_LIVE_CONFIG");
-    root->setAttribute ("formatVersion", 3);
+    root->setAttribute ("formatVersion", 4);
     root->setAttribute ("inputDevice", inputDeviceName);
     root->setAttribute ("outputDevice", outputDeviceName);
     root->setAttribute ("sampleRate", sampleRate);
@@ -33,6 +33,7 @@ std::unique_ptr<juce::XmlElement> AppConfig::toXml() const
         child->setAttribute ("pluginState", lane.pluginStateBase64);
         child->setAttribute ("editorOpen", lane.editorOpen);
         child->setAttribute ("editorWindowState", lane.editorWindowState);
+        child->setAttribute ("pluginEnabled", lane.pluginEnabled);
     }
 
     return root;
@@ -72,6 +73,7 @@ AppConfig AppConfig::fromXml (const juce::XmlElement& root)
         lane.pluginStateBase64 = child->getStringAttribute ("pluginState");
         lane.editorOpen = child->getBoolAttribute ("editorOpen", false);
         lane.editorWindowState = child->getStringAttribute ("editorWindowState");
+        lane.pluginEnabled = child->getBoolAttribute ("pluginEnabled", true);
         result.lanes.add (std::move (lane));
     }
 
