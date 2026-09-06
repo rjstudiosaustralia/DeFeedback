@@ -48,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 11.19.0
 
@@ -60,6 +60,9 @@ jobs:
 
       - name: Install Companion module dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build Companion module for validation
+        run: pnpm run build
 
       - name: Lint Companion module
         run: pnpm run lint
