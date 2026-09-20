@@ -11,27 +11,34 @@ class SleepInhibitor::Pimpl final
 public:
     Pimpl()
     {
-        const auto result = IOPMAssertionCreateWithName (
-            kIOPMAssertionTypePreventUserIdleSystemSleep,
-            kIOPMAssertionLevelOn,
-            CFSTR ("DeFeedback Live is protecting a live audio session"),
-            &assertionId);
-
-        if (result == kIOReturnSuccess)
-            active = true;
-        else
-            error = "macOS rejected the system-sleep assertion (IOKit error "
-                  + juce::String (static_cast<int> (result)) + ").";
+        createAssertion (kIOPMAssertionTypePreventUserIdleSystemSleep, systemAssertion, "system");
+        createAssertion (kIOPMAssertionTypePreventUserIdleDisplaySleep, displayAssertion, "display");
+        active = systemAssertion != kIOPMNullAssertionID && displayAssertion != kIOPMNullAssertionID;
     }
 
     ~Pimpl()
     {
-        if (active)
-            IOPMAssertionRelease (assertionId);
+        if (systemAssertion != kIOPMNullAssertionID) IOPMAssertionRelease (systemAssertion);
+        if (displayAssertion != kIOPMNullAssertionID) IOPMAssertionRelease (displayAssertion);
+    }
+
+    void createAssertion (CFStringRef type, IOPMAssertionID& assertion, const char* name)
+    {
+        const auto result = IOPMAssertionCreateWithName (
+            type, kIOPMAssertionLevelOn,
+            CFSTR ("DeFeedback Live is protecting a live audio session"), &assertion);
+        if (result != kIOReturnSuccess)
+        {
+            assertion = kIOPMNullAssertionID;
+            if (error.isNotEmpty()) error += " ";
+            error += "macOS rejected the " + juce::String (name) + "-sleep assertion (IOKit error "
+                   + juce::String (static_cast<int> (result)) + ").";
+        }
     }
 
     juce::ScopedLowPowerModeDisabler appNapDisabler;
-    IOPMAssertionID assertionId = kIOPMNullAssertionID;
+    IOPMAssertionID systemAssertion = kIOPMNullAssertionID;
+    IOPMAssertionID displayAssertion = kIOPMNullAssertionID;
     juce::String error;
     bool active = false;
 };

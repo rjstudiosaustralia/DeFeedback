@@ -1,6 +1,6 @@
 {
 	"name": "companion-module-rjstudiosaustralia-defeedback-live",
-	"version": "0.1.0",
+	"version": "0.4.0",
 	"description": "Bitfocus Companion control for DeFeedback Live",
 	"main": "dist/main.js",
 	"type": "module",

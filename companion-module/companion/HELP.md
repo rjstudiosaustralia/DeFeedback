@@ -22,8 +22,16 @@ The module provides actions for:
 
 Feedbacks and variables report the live state received from the Mac, including each lane's name, Strength, mute, bypass, enabled state, status, and meters.
 
-Turning a lane off suspends that plugin and silences that lane's output while preserving its route and settings. Bypass keeps the lane running and passes dry audio. Master mute leaves processing active but zeros every physical output.
+Turning a lane off suspends that plugin and passes dry audio while preserving its route and settings. Bypass keeps the lane running and passes dry audio. Master mute leaves processing active but zeros every physical output.
 
 ## Safety and independence
 
 This is independent third-party software. It is not affiliated with, sponsored by, approved by, or endorsed by Alpha Labs LLC. De-Feedback is separately installed and licensed. Use this engineering preview at your own risk, verify every route, and retain an independent hardware or console mute.
+
+## VoiceISO (host 0.9 / module 0.3)
+
+Select VoiceISO through the mode action. The dedicated **VoiceISO: Set Strength (0–120%)** action uses the plugin's visible scale; `lane_N_voiceiso_strength` reports it. Existing generic Strength set/step actions and `lane_N_strength` keep their normalized percentage semantics: 100% of range equals VoiceISO Strength 120%. Full/Lite selection uses the lane's native UI on the Mac. OFF and BYPASS both pass dry audio in every mode; master mute still silences outputs.
+
+## Mixed racks (host 0.10 / module 0.4)
+
+Use **Settings: Select lane plugin** to choose the plugin for one lane, or **Settings: Apply plugin to all lanes** for the whole rack. Both stop audio and mute outputs. Names and patches stay in place. Commands and VoiceISO/Clear Voice controls follow the target lane's plugin, including mixed racks. `lane_N_plugin_mode` reports each lane's selection; the global `plugin_mode` variable reports `mixed` when selections differ.

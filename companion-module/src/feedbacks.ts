@@ -57,7 +57,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 			options: laneOption(),
 			callback: (feedback) => {
 				const lane = self.getLane(Number(feedback.options.lane))
-				return lane?.dry === true || lane?.dryFallback === true
+				return lane?.pluginEnabled === false || lane?.dry === true || lane?.dryFallback === true
 			},
 		},
 		lane_processing: {

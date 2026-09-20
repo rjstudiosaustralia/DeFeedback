@@ -29,6 +29,13 @@ struct LaneStatus
     float strengthNormalized = 1.0f;
     float inputPeak = 0.0f;
     float outputPeak = 0.0f;
+    bool dereverbAvailable = false;
+    bool cpuModeAvailable = false;
+    bool latencyModeAvailable = false;
+    float dereverbNormalized = 0.0f;
+    bool highCpu = false;
+    bool lowLatency = false;
+    int pluginLatencySamples = 0;
 };
 
 class AudioEngine final : public juce::ChangeBroadcaster,
@@ -48,7 +55,9 @@ public:
     bool isEmergencyMuted() const noexcept { return emergencyMuted.load (std::memory_order_relaxed); }
 
     juce::String setLanes (const juce::Array<LaneConfig>&);
-    juce::Array<LaneConfig> captureLanesWithPluginState();
+    juce::String setPluginMode (PluginMode, const juce::Array<LaneConfig>&);
+    PluginMode getPluginMode() const noexcept { return pluginMode; }
+    juce::Array<LaneConfig> captureLanesWithPluginState (bool preserveModeControls = false);
 
     juce::Array<DeviceChoice> getDeviceChoices();
     juce::Array<double> getAvailableSampleRates() const;
@@ -75,11 +84,13 @@ public:
     void openPluginEditor (int laneIndex);
     void restorePluginWindows();
     void setLaneStrength (int laneIndex, float normalizedValue);
+    juce::String setLaneClearVoiceControl (int laneIndex, const juce::String& control, float value);
     void setLanePluginMuted (int laneIndex, bool shouldMute);
     void setLanePluginEnabled (int laneIndex, bool shouldEnable);
     void setLaneName (int laneIndex, const juce::String& name);
 
 private:
+    friend class AudioEngineIntegrationTest;
     struct LaneRuntime
     {
         juce::AudioProcessorGraph::Node::Ptr pluginNode;
@@ -87,7 +98,11 @@ private:
         MeterProcessor* outputMeter = nullptr;
         juce::AudioProcessorParameter* strengthParameter = nullptr;
         juce::AudioProcessorParameter* muteParameter = nullptr;
-        std::shared_ptr<std::atomic<bool>> inactiveOutputMute;
+        juce::AudioProcessorParameter* dereverbParameter = nullptr;
+        juce::AudioProcessorParameter* cpuParameter = nullptr;
+        juce::AudioProcessorParameter* latencyParameter = nullptr;
+        juce::AudioProcessorParameter* bypassParameter = nullptr;
+        std::shared_ptr<std::atomic<bool>> dryOutput;
         juce::String status;
         bool dryFallback = false;
     };
@@ -95,12 +110,13 @@ private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void handleAsyncUpdate() override;
     void locatePlugin();
+    void locatePlugin (PluginMode);
     juce::String rebuildGraph();
     void closePluginWindows();
     void capturePluginWindowStates();
     void reopenSavedPluginWindows();
-    void bindPluginParameters (LaneRuntime&);
-    void updateSavedPluginStates();
+    void bindPluginParameters (LaneRuntime&, PluginMode);
+    void updateSavedPluginStates (bool preserveModeControls = false);
     int getActiveInputSpan() const;
     int getActiveOutputSpan() const;
     void configureAllChannels (juce::AudioDeviceManager::AudioDeviceSetup&) const;
@@ -110,12 +126,19 @@ private:
     juce::AudioPluginFormatManager pluginFormats;
     juce::AudioProcessorGraph graph;
     juce::AudioProcessorPlayer player;
-    juce::PluginDescription pluginDescription;
+    struct PluginInfo
+    {
+        juce::PluginDescription description;
+        juce::String diagnostic;
+        bool available = false;
+    };
+    std::map<PluginMode, PluginInfo> plugins;
     juce::Array<LaneConfig> lanes;
     std::vector<LaneRuntime> laneRuntimes;
     juce::OwnedArray<PluginWindow> pluginWindows;
 
     bool running = false;
+    PluginMode pluginMode = PluginMode::deFeedback;
     std::atomic<bool> emergencyMuted { false };
     bool pluginAvailable = false;
     bool suppressDeviceNotifications = false;

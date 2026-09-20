@@ -9,7 +9,7 @@ class MeterProcessor final : public juce::AudioProcessor
 public:
     explicit MeterProcessor (std::atomic<bool>* outputMute = nullptr,
                              bool measureAfterMute = false,
-                             std::atomic<bool>* laneMute = nullptr);
+                             std::atomic<bool>* dryPass = nullptr);
 
     const juce::String getName() const override { return "Lane Meter"; }
     void prepareToPlay (double, int) override {}
@@ -39,7 +39,9 @@ private:
 
     std::atomic<float> peak { 0.0f };
     std::atomic<bool>* outputMute = nullptr;
-    std::atomic<bool>* perLaneMute = nullptr;
+    // When present, input 0 is processed and input 1 is dry. The graph aligns
+    // their latency. OFF selects dry without rebuilding or running plugin DSP.
+    std::atomic<bool>* perLaneDry = nullptr;
     bool measureAfterGate = false;
 };
 }

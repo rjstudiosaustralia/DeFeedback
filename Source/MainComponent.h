@@ -44,6 +44,8 @@ private:
     bool startRemoteControl();
     void stopRemoteControl();
     void showRemoteAccessDialog();
+    void showSettingsDialog();
+    juce::String applySettings (const AppConfig&);
     void updateRemoteControls();
     void publishRemoteState (const juce::Array<LaneStatus>&, bool engineRunning, bool masterMuted);
     void handleRemoteCommand (const juce::var&);
@@ -76,6 +78,7 @@ private:
     juce::TextButton resetXRunsButton { "RESET XRUNS" };
     juce::TextButton addLaneButton { "+ ADD LANE" };
     juce::TextButton aboutButton { "ABOUT / SAFETY" };
+    juce::TextButton settingsButton { "SETTINGS" };
     juce::TextButton copyRemoteButton { "COPY DETAILS" };
     juce::TextButton remoteAccessButton { "ACCESS" };
     juce::ToggleButton autoStartToggle { "Auto-start audio" };

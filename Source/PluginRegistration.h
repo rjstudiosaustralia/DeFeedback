@@ -5,4 +5,6 @@
 namespace defeedback
 {
 bool ensureDeFeedbackAudioUnitRegistered (juce::String& diagnostic);
+bool ensureClearVoiceAudioUnitRegistered (juce::String& diagnostic);
+bool ensureVoiceIsoAudioUnitRegistered (juce::String& diagnostic);
 }

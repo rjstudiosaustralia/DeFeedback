@@ -61,7 +61,7 @@ Before relying on monitor-free operation:
 
 1. verify launch-at-login after a full reboot;
 2. verify the Mac's control IP address remains stable;
-3. verify `SYSTEM SLEEP BLOCKED` is shown, then qualify display-sleep, lid, explicit-sleep, and OS-update behavior for the installation;
+3. verify `SCREEN & SYSTEM AWAKE` is shown, then qualify display-sleep, lid, explicit-sleep, and OS-update behavior for the installation;
 4. confirm remote access still works when the preferred interface is disconnected at launch;
 5. confirm device refresh and recovery after powering the interface later;
 6. test a complete browser disconnect/reconnect without interrupting audio; and
@@ -74,3 +74,15 @@ If the listener cannot bind to `8765`, the native app reports the error and leav
 ## Audio-thread boundary
 
 The network thread never calls the real-time audio callback or plug-in graph directly. The 10 Hz app timer publishes read-only state snapshots for browser polling. Authenticated commands are queued onto the JUCE message thread, where the same validated device, routing, and plug-in-control operations used by the native interface are performed. A stalled or malicious browser connection can delay network responses, but it cannot block the Core Audio callback.
+
+## Per-lane plugins (0.10)
+
+Browser Settings contains a plugin selector for each lane beside its input/output patches, plus an explicit Apply to all lanes shortcut. Changes stop the engine and mute outputs. Each strip uses its own plugin's controls and scale; Clear Voice CPU/latency changes require a stopped engine.
+
+State includes per-lane `pluginMode` and `pluginName`. Top-level `pluginMode` is `mixed` when plugins differ, otherwise the common plugin ID. Per-lane Clear Voice and delay fields remain available. Strength and Dereverb API values are normalized 0–1.
+
+- `setLanePluginMode`: `id`, `value: "defeedback" | "clearvoice" | "voiceiso"`, and current lane `pluginMode` for stale-command checking.
+- `setPluginMode`: `value` applies one plugin to every existing lane, retaining names and patches, and sets the default for new lanes.
+- `setLaneClearVoiceControl`: `id`, `control: "dereverb" | "cpu" | "latency"`, normalized `value`, and `commit`.
+
+Include the target lane's current `pluginMode` with lane commands. The host rejects a mismatched plugin identity for that lane. Global master mute remains available regardless of this guard. `updateLane` still supports patches and validates exclusive routing. OFF and BYPASS pass dry audio; master mute overrides both.

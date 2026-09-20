@@ -20,6 +20,10 @@ Core Audio input N
 
 The application has one `juce::AudioDeviceManager`, one `AudioProcessorPlayer`, and one `AudioProcessorGraph`. Every lane receives its own De-Feedback instance plus raw-input and post-gate output meter nodes. Input and output channel assignments are exclusive across lanes; duplicate routing is rejected by both the UI and engine.
 
+## Plugin mode extension (0.8)
+
+Each lane selects its own plugin; the rack can mix all three supported Audio Units. Inactive per-lane plugin states exist only as saved settings. De-Feedback keeps its original AU identity and processing path. Clear Voice Live 1.1 uses `aufx/Cv11/FabS`, its own AU registration fallback, normalized control bindings and rate validation. Settings owns patching, and mode/patch changes stop and mute audio. See [Plugin modes](PLUGIN_MODES.md) for state-bank isolation, parameter snapshots and integration tests.
+
 ## Audio Unit discovery
 
 The target AU identity is fixed to:
@@ -88,3 +92,5 @@ No licence credentials or plugin binaries are stored by the host.
 ## Distribution
 
 The application is not sandboxed because it must host a third-party AUv2 and access professional Core Audio devices. A notarized release will need hardened runtime plus the library-validation entitlement appropriate for an audio plugin host. Signing credentials remain outside the repository.
+
+VoiceISO uses `aufx/Viso/Maze`. Settings format 8 stores the mixed rack with independent per-lane vendor states; only each lane's selected plugin has a live instance. OFF selects the output meter's second, dry input while suspending the AU; JUCE compensates its delay against the processed input. Suspension and selector changes share a short graph callback lock, with plugin reset, serialization and editor work outside it. Master mute remains the final gate. Parameter snapshots bind VoiceISO Amount and Bypass; private model state remains opaque.

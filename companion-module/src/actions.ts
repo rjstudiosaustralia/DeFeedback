@@ -4,6 +4,13 @@ type LaneOption = { lane: number }
 type ModeOption = { mode: string }
 
 export type ActionsSchema = {
+	set_plugin_mode: { options: { value: string } }
+	set_lane_plugin: { options: LaneOption & { value: string } }
+	set_voiceiso_strength: { options: LaneOption & { value: number } }
+	set_dereverb: { options: LaneOption & { value: number } }
+	step_dereverb: { options: LaneOption & { step: number } }
+	set_clearvoice_cpu: { options: LaneOption & { value: string } }
+	set_clearvoice_latency: { options: LaneOption & { value: string } }
 	set_strength: { options: LaneOption & { value: number } }
 	step_strength: { options: LaneOption & { step: number } }
 	set_bypass: { options: LaneOption & ModeOption }
@@ -31,11 +38,167 @@ export function UpdateActions(self: ModuleInstance): void {
 	const defaultLane = laneChoices[0]?.id || 1
 
 	self.setActionDefinitions({
+		set_plugin_mode: {
+			name: 'Settings: Apply plugin to all lanes (stops engine and mutes outputs)',
+			options: [
+				{
+					id: 'value',
+					type: 'dropdown',
+					label: 'Plugin mode',
+					choices: [
+						{ id: 'defeedback', label: 'De-Feedback' },
+						{ id: 'clearvoice', label: 'Clear Voice Live 1.1' },
+						{ id: 'voiceiso', label: 'VoiceISO' },
+					],
+					default: 'defeedback',
+				},
+			],
+			callback: async (event) => self.runCommand({ type: 'setPluginMode', value: String(event.options.value) }),
+		},
+		set_lane_plugin: {
+			name: 'Settings: Select lane plugin (stops engine and mutes outputs)',
+			options: [
+				{ id: 'lane', type: 'dropdown', label: 'Lane', choices: laneChoices, default: defaultLane },
+				{
+					id: 'value',
+					type: 'dropdown',
+					label: 'Plugin',
+					choices: [
+						{ id: 'defeedback', label: 'De-Feedback' },
+						{ id: 'clearvoice', label: 'Clear Voice Live 1.1' },
+						{ id: 'voiceiso', label: 'VoiceISO' },
+					],
+					default: 'defeedback',
+				},
+			],
+			callback: async (event) =>
+				self.runCommand({
+					type: 'setLanePluginMode',
+					id: Number(event.options.lane),
+					value: String(event.options.value),
+				}),
+		},
+		set_voiceiso_strength: {
+			name: 'VoiceISO: Set Strength (0–120%)',
+			options: [
+				{ id: 'lane', type: 'dropdown', label: 'Lane', choices: laneChoices, default: defaultLane },
+				{ id: 'value', type: 'number', label: 'VoiceISO Strength (%)', min: 0, max: 120, default: 100 },
+			],
+			callback: async (event) => {
+				const lane = self.getLane(Number(event.options.lane))
+				if ((lane?.pluginMode || self.latestState?.pluginMode) !== 'voiceiso' || !lane?.strengthAvailable) return
+				await self.runCommand({
+					type: 'setLaneStrength',
+					id: lane.id,
+					value: Math.min(1, Math.max(0, Number(event.options.value) / 120)),
+					commit: true,
+				})
+			},
+		},
+		set_dereverb: {
+			name: 'Clear Voice: Set Dereverb',
+			options: [
+				{ id: 'lane', type: 'dropdown', label: 'Lane', choices: laneChoices, default: defaultLane },
+				{ id: 'value', type: 'number', label: 'Dereverb (0–10)', min: 0, max: 10, default: 6 },
+			],
+			callback: async (event) => {
+				const lane = self.getLane(Number(event.options.lane))
+				if (!lane?.dereverbAvailable) return
+				await self.runCommand({
+					type: 'setLaneClearVoiceControl',
+					id: lane.id,
+					control: 'dereverb',
+					value: Number(event.options.value) / 10,
+					commit: true,
+				})
+			},
+		},
+		step_dereverb: {
+			name: 'Clear Voice: Step Dereverb (dial or buttons)',
+			options: [
+				{ id: 'lane', type: 'dropdown', label: 'Lane', choices: laneChoices, default: defaultLane },
+				{ id: 'step', type: 'number', label: 'Change (0–10 scale)', min: -10, max: 10, default: 0.5 },
+			],
+			callback: async (event) => {
+				const lane = self.getLane(Number(event.options.lane))
+				if (!lane?.dereverbAvailable) return
+				lane.dereverb = Math.min(1, Math.max(0, (lane.dereverb || 0) + Number(event.options.step) / 10))
+				self.notifyOptimisticState()
+				await self.runCommand({
+					type: 'setLaneClearVoiceControl',
+					id: lane.id,
+					control: 'dereverb',
+					value: lane.dereverb,
+					commit: true,
+				})
+			},
+		},
+		set_clearvoice_cpu: {
+			name: 'Clear Voice: Set CPU mode (engine must be stopped)',
+			options: [
+				{ id: 'lane', type: 'dropdown', label: 'Lane', choices: laneChoices, default: defaultLane },
+				{
+					id: 'value',
+					type: 'dropdown',
+					label: 'CPU',
+					choices: [
+						{ id: '0', label: 'LOW' },
+						{ id: '1', label: 'HIGH' },
+					],
+					default: '0',
+				},
+			],
+			callback: async (event) => {
+				const lane = self.getLane(Number(event.options.lane))
+				if (!lane?.cpuModeAvailable) return
+				await self.runCommand({
+					type: 'setLaneClearVoiceControl',
+					id: lane.id,
+					control: 'cpu',
+					value: Number(event.options.value),
+					commit: true,
+				})
+			},
+		},
+		set_clearvoice_latency: {
+			name: 'Clear Voice: Set latency mode (engine must be stopped)',
+			options: [
+				{ id: 'lane', type: 'dropdown', label: 'Lane', choices: laneChoices, default: defaultLane },
+				{
+					id: 'value',
+					type: 'dropdown',
+					label: 'Latency',
+					choices: [
+						{ id: '0', label: 'ZERO' },
+						{ id: '1', label: 'LOW' },
+					],
+					default: '0',
+				},
+			],
+			callback: async (event) => {
+				const lane = self.getLane(Number(event.options.lane))
+				if (!lane?.latencyModeAvailable) return
+				await self.runCommand({
+					type: 'setLaneClearVoiceControl',
+					id: lane.id,
+					control: 'latency',
+					value: Number(event.options.value),
+					commit: true,
+				})
+			},
+		},
 		set_strength: {
 			name: 'Lane: Set Strength / Sensitivity',
 			options: [
 				{ id: 'lane', type: 'dropdown', label: 'Lane', choices: laneChoices, default: defaultLane },
-				{ id: 'value', type: 'number', label: 'Strength (%)', min: 0, max: 100, default: 100 },
+				{
+					id: 'value',
+					type: 'number',
+					label: 'Strength (% of full range; VoiceISO 100 = 120%)',
+					min: 0,
+					max: 100,
+					default: 100,
+				},
 			],
 			callback: async (event) => {
 				const lane = self.getLane(Number(event.options.lane))
@@ -107,7 +270,7 @@ export function UpdateActions(self: ModuleInstance): void {
 			],
 			callback: async (event) => {
 				const lane = self.getLane(Number(event.options.lane))
-				if (!lane) return
+				if (!lane?.pluginMuteAvailable) return
 				lane.pluginMuted = modeValue(String(event.options.mode), lane.pluginMuted)
 				self.notifyOptimisticState()
 				await self.runCommand({

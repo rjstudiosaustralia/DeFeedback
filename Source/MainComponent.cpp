@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 
 #include "LoginItem.h"
+#include "SettingsPanel.h"
 
 namespace defeedback
 {
@@ -46,7 +47,6 @@ struct LaneGeometry
 {
     juce::Rectangle<int> number;
     juce::Rectangle<int> name;
-    juce::Rectangle<int> input;
     juce::Rectangle<int> inputMeter;
     juce::Rectangle<int> strength;
     juce::Rectangle<int> pluginEnable;
@@ -54,7 +54,6 @@ struct LaneGeometry
     juce::Rectangle<int> pluginMute;
     juce::Rectangle<int> bypass;
     juce::Rectangle<int> outputMeter;
-    juce::Rectangle<int> output;
     juce::Rectangle<int> status;
     juce::Rectangle<int> remove;
 };
@@ -69,16 +68,12 @@ LaneGeometry calculateLaneGeometry (juce::Rectangle<int> bounds)
     area.removeFromLeft (compact ? 4 : 6);
     layout.name = area.removeFromLeft (compact ? 82 : 112);
     area.removeFromLeft (compact ? 5 : 8);
-    layout.input = area.removeFromLeft (compact ? 104 : 140);
-    area.removeFromLeft (compact ? 5 : 8);
     layout.inputMeter = area.removeFromLeft (compact ? 42 : 70);
     area.removeFromLeft (compact ? 6 : 10);
 
     layout.remove = area.removeFromRight (compact ? 28 : 32);
     area.removeFromRight (compact ? 4 : 6);
     layout.status = area.removeFromRight (compact ? 72 : 120);
-    area.removeFromRight (compact ? 5 : 8);
-    layout.output = area.removeFromRight (compact ? 104 : 140);
     area.removeFromRight (compact ? 5 : 8);
     layout.outputMeter = area.removeFromRight (compact ? 42 : 70);
     area.removeFromRight (compact ? 6 : 10);
@@ -127,7 +122,7 @@ public:
     {
         initialise (number, "#", juce::Justification::centred);
         initialise (name, "NAME");
-        initialise (input, "INPUT");
+
         initialise (inputLevel, "INPUT LEVEL", juce::Justification::centred);
         initialise (strength, "STRENGTH");
         initialise (pluginEnable, "PLUGIN", juce::Justification::centred);
@@ -135,8 +130,16 @@ public:
         initialise (pluginMute, "PLUGIN MUTE", juce::Justification::centred);
         initialise (bypass, "BYPASS", juce::Justification::centred);
         initialise (outputLevel, "OUTPUT LEVEL", juce::Justification::centred);
-        initialise (output, "OUTPUT");
+
         initialise (status, "STATE");
+    }
+
+    void setMode (PluginMode)
+    {
+        pluginMute.setVisible (false);
+        pluginEnable.setVisible (false);
+        editor.setVisible (false);
+        strength.setText ("PLUGIN CONTROLS", juce::dontSendNotification);
     }
 
     void paint (juce::Graphics& g) override
@@ -150,7 +153,6 @@ public:
         const auto layout = calculateLaneGeometry (getLocalBounds());
         number.setBounds (layout.number);
         name.setBounds (layout.name);
-        input.setBounds (layout.input);
         inputLevel.setBounds (layout.inputMeter);
         strength.setBounds (layout.strength);
         pluginEnable.setBounds (layout.pluginEnable);
@@ -158,7 +160,6 @@ public:
         pluginMute.setBounds (layout.pluginMute);
         bypass.setBounds (layout.bypass);
         outputLevel.setBounds (layout.outputMeter);
-        output.setBounds (layout.output);
         status.setBounds (layout.status);
     }
 
@@ -176,7 +177,6 @@ private:
 
     juce::Label number;
     juce::Label name;
-    juce::Label input;
     juce::Label inputLevel;
     juce::Label strength;
     juce::Label pluginEnable;
@@ -184,7 +184,6 @@ private:
     juce::Label pluginMute;
     juce::Label bypass;
     juce::Label outputLevel;
-    juce::Label output;
     juce::Label status;
 };
 
@@ -193,9 +192,8 @@ class LaneRow final : public juce::Component
 public:
     LaneRow (int rowIndex,
              const LaneConfig& initial,
-             const juce::StringArray& inputNames,
-             const juce::StringArray& outputNames)
-        : index (rowIndex), config (initial)
+             PluginMode mode)
+        : index (rowIndex), config (initial), pluginMode (mode)
     {
         numberLabel.setText (juce::String (rowIndex + 1), juce::dontSendNotification);
         numberLabel.setJustificationType (juce::Justification::centred);
@@ -204,23 +202,23 @@ public:
 
         nameEditor.setText (config.name, false);
         nameEditor.setSelectAllWhenFocused (true);
+        nameEditor.setTooltip ("Patch: input " + juce::String (config.inputChannel + 1)
+            + " -> output " + juce::String (config.outputChannel + 1) + ". Edit in Settings.");
         nameEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff101316));
         nameEditor.setColour (juce::TextEditor::outlineColourId, border);
         nameEditor.onFocusLost = [this] { commit(); };
         nameEditor.onReturnKey = [this] { commit(); };
         addAndMakeVisible (nameEditor);
-
-        populateChannels (inputCombo, inputNames, config.inputChannel, "Input");
-        populateChannels (outputCombo, outputNames, config.outputChannel, "Output");
-        inputCombo.onChange = [this] { commit(); };
-        outputCombo.onChange = [this] { commit(); };
-        addAndMakeVisible (inputCombo);
-        addAndMakeVisible (outputCombo);
+        pluginNameLabel.setText (pluginModeName (pluginMode), juce::dontSendNotification);
+        pluginNameLabel.setFont (juce::FontOptions (10.0f));
+        pluginNameLabel.setColour (juce::Label::textColourId, mutedText);
+        pluginNameLabel.setTooltip (pluginModeName (pluginMode) + " - change in Settings");
+        addAndMakeVisible (pluginNameLabel);
 
         pluginEnableToggle.setToggleState (config.pluginEnabled, juce::dontSendNotification);
         pluginEnableToggle.setButtonText (config.pluginEnabled ? "ON" : "OFF");
         pluginEnableToggle.setColour (juce::ToggleButton::textColourId, green);
-        pluginEnableToggle.setTooltip ("Suspend this De-Feedback instance and silence the lane without losing its route or settings.");
+        pluginEnableToggle.setTooltip ("Suspend this plugin instance and pass input audio dry, retaining its route and settings.");
         pluginEnableToggle.onClick = [this]
         {
             const auto enabled = pluginEnableToggle.getToggleState();
@@ -233,20 +231,20 @@ public:
 
         dryToggle.setToggleState (config.dry, juce::dontSendNotification);
         dryToggle.setColour (juce::ToggleButton::textColourId, amber);
-        dryToggle.setTooltip ("Bypass De-Feedback and pass the input dry.");
+        dryToggle.setTooltip ("Bypass the plugin and pass the input dry.");
         dryToggle.onClick = [this] { commit(); };
         addAndMakeVisible (dryToggle);
 
         strengthSlider.setSliderStyle (juce::Slider::LinearHorizontal);
         strengthSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 22);
-        strengthSlider.setRange (0.0, 100.0, 0.1);
-        strengthSlider.setTextValueSuffix ("%");
+        strengthSlider.setRange (0.0, pluginMode == PluginMode::clearVoice ? 10.0 : pluginMode == PluginMode::voiceIso ? 120.0 : 100.0, 0.1);
+        strengthSlider.setTextValueSuffix (pluginMode == PluginMode::clearVoice ? "" : "%");
         strengthSlider.setValue (100.0, juce::dontSendNotification);
-        strengthSlider.setTooltip ("De-Feedback Strength");
+        strengthSlider.setTooltip (pluginModeName (pluginMode) + " Strength");
         strengthSlider.onValueChange = [this]
         {
             if (onStrengthChanged != nullptr)
-                onStrengthChanged (index, static_cast<float> (strengthSlider.getValue() / 100.0));
+                onStrengthChanged (index, static_cast<float> (strengthSlider.getValue() / strengthSlider.getMaximum()));
             if (! strengthSlider.isMouseButtonDown() && onPluginControlCommitted != nullptr)
                 onPluginControlCommitted();
         };
@@ -266,7 +264,47 @@ public:
             if (onPluginControlCommitted != nullptr)
                 onPluginControlCommitted();
         };
-        addAndMakeVisible (pluginMuteToggle);
+        addChildComponent (pluginMuteToggle);
+        pluginMuteToggle.setVisible (pluginMode == PluginMode::deFeedback);
+
+        if (pluginMode == PluginMode::clearVoice)
+        {
+            dereverbSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+            dereverbSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 22);
+            dereverbSlider.setRange (0.0, 10.0, 0.1);
+            dereverbSlider.setTooltip ("Dereverb: raise Strength first; Strength 0 bypasses all processing.");
+            dereverbSlider.onValueChange = [this]
+            {
+                if (onClearVoiceControl != nullptr)
+                    onClearVoiceControl (index, "dereverb", static_cast<float> (dereverbSlider.getValue() / 10.0));
+                if (! dereverbSlider.isMouseButtonDown() && onPluginControlCommitted != nullptr)
+                    onPluginControlCommitted();
+            };
+            dereverbSlider.onDragEnd = [this] { if (onPluginControlCommitted != nullptr) onPluginControlCommitted(); };
+            cpuCombo.addItem ("CPU: LOW", 1);
+            cpuCombo.addItem ("CPU: HIGH", 2);
+            latencyCombo.addItem ("Latency: ZERO", 1);
+            latencyCombo.addItem ("Latency: LOW", 2);
+            cpuCombo.setTooltip ("LOW is recommended for feedback-critical monitoring. Stop the engine to change.");
+            latencyCombo.setTooltip ("ZERO for monitoring. LOW adds plugin delay. Stop the engine to change.");
+            cpuCombo.onChange = [this] { commitMode ("cpu", cpuCombo); };
+            latencyCombo.onChange = [this] { commitMode ("latency", latencyCombo); };
+            strengthLabel.setText ("STRENGTH", juce::dontSendNotification);
+            dereverbLabel.setText ("DEREVERB", juce::dontSendNotification);
+            for (auto* component : std::initializer_list<juce::Component*> {
+                     &dereverbSlider, &cpuCombo, &latencyCombo, &strengthLabel, &dereverbLabel })
+                addAndMakeVisible (component);
+        }
+
+        if (pluginMode == PluginMode::voiceIso)
+        {
+            strengthLabel.setText ("STRENGTH", juce::dontSendNotification);
+            modelHint.setText ("FULL / LITE: OPEN UI", juce::dontSendNotification);
+            modelHint.setFont (juce::FontOptions (12.0f));
+            modelHint.setTooltip ("Stop the engine, then select Full or Lite in the plugin editor. Each lane saves its model.");
+            addAndMakeVisible (strengthLabel);
+            addAndMakeVisible (modelHint);
+        }
 
         statusLabel.setText ("WAITING", juce::dontSendNotification);
         statusLabel.setFont (juce::FontOptions (12.0f, juce::Font::bold));
@@ -297,26 +335,9 @@ public:
         result.name = nameEditor.getText().trim().isNotEmpty()
                     ? nameEditor.getText().trim()
                     : "Vocal " + juce::String (index + 1);
-        result.inputChannel = juce::jmax (0, inputCombo.getSelectedId() - 1);
-        result.outputChannel = juce::jmax (0, outputCombo.getSelectedId() - 1);
         result.dry = dryToggle.getToggleState();
         result.pluginEnabled = pluginEnableToggle.getToggleState();
         return result;
-    }
-
-    void setExclusiveRouteChoices (const juce::Array<LaneConfig>& lanes)
-    {
-        for (int other = 0; other < lanes.size(); ++other)
-        {
-            if (other == index)
-                continue;
-
-            if (lanes[other].inputChannel != config.inputChannel)
-                inputCombo.setItemEnabled (lanes[other].inputChannel + 1, false);
-
-            if (lanes[other].outputChannel != config.outputChannel)
-                outputCombo.setItemEnabled (lanes[other].outputChannel + 1, false);
-        }
     }
 
     void setStatus (const LaneStatus& status, bool engineRunning, bool masterMuted)
@@ -324,12 +345,7 @@ public:
         auto displayStatus = status.text;
         auto nextAccent = green;
 
-        if (! status.pluginEnabled)
-        {
-            displayStatus = "INACTIVE";
-            nextAccent = mutedText;
-        }
-        else if (! engineRunning)
+        if (! engineRunning)
         {
             displayStatus = "ENGINE STOPPED";
             nextAccent = mutedText;
@@ -338,6 +354,11 @@ public:
         {
             displayStatus = "OUTPUT MUTED";
             nextAccent = red;
+        }
+        else if (! status.pluginEnabled)
+        {
+            displayStatus = "PLUGIN OFF - DRY";
+            nextAccent = amber;
         }
         else if (status.pluginMuted)
         {
@@ -364,8 +385,16 @@ public:
         strengthSlider.setEnabled (status.strengthAvailable);
         pluginMuteToggle.setEnabled (status.pluginMuteAvailable);
         if (! strengthSlider.isMouseButtonDown())
-            strengthSlider.setValue (status.strengthNormalized * 100.0, juce::dontSendNotification);
+            strengthSlider.setValue (status.strengthNormalized * strengthSlider.getMaximum(), juce::dontSendNotification);
         pluginMuteToggle.setToggleState (status.pluginMuted, juce::dontSendNotification);
+        dereverbSlider.setEnabled (status.dereverbAvailable);
+        if (! dereverbSlider.isMouseButtonDown())
+            dereverbSlider.setValue (status.dereverbNormalized * 10.0, juce::dontSendNotification);
+        cpuCombo.setEnabled (status.cpuModeAvailable && ! engineRunning);
+        latencyCombo.setEnabled (status.latencyModeAvailable && ! engineRunning);
+        cpuCombo.setSelectedId (status.highCpu ? 2 : 1, juce::dontSendNotification);
+        latencyCombo.setSelectedId (status.lowLatency ? 2 : 1, juce::dontSendNotification);
+        statusLabel.setTooltip (status.text + " | Plugin delay: " + juce::String (status.pluginLatencySamples) + " samples");
         inputMeter.setLevel (status.inputPeak);
         outputMeter.setLevel (status.outputPeak);
         repaint();
@@ -385,8 +414,9 @@ public:
     {
         const auto layout = calculateLaneGeometry (getLocalBounds());
         numberLabel.setBounds (layout.number);
-        nameEditor.setBounds (layout.name.withSizeKeepingCentre (layout.name.getWidth(), 34));
-        inputCombo.setBounds (layout.input.withSizeKeepingCentre (layout.input.getWidth(), 34));
+        auto nameArea = layout.name.withSizeKeepingCentre (layout.name.getWidth(), 52);
+        nameEditor.setBounds (nameArea.removeFromTop (32));
+        pluginNameLabel.setBounds (nameArea);
         inputMeter.setBounds (layout.inputMeter.withSizeKeepingCentre (layout.inputMeter.getWidth(), 10));
         strengthSlider.setBounds (layout.strength.withSizeKeepingCentre (layout.strength.getWidth(), 30));
         pluginEnableToggle.setBounds (layout.pluginEnable.withSizeKeepingCentre (layout.pluginEnable.getWidth(), 30));
@@ -394,9 +424,36 @@ public:
         pluginMuteToggle.setBounds (layout.pluginMute.withSizeKeepingCentre (layout.pluginMute.getWidth(), 30));
         dryToggle.setBounds (layout.bypass.withSizeKeepingCentre (layout.bypass.getWidth(), 30));
         outputMeter.setBounds (layout.outputMeter.withSizeKeepingCentre (layout.outputMeter.getWidth(), 10));
-        outputCombo.setBounds (layout.output.withSizeKeepingCentre (layout.output.getWidth(), 34));
         statusLabel.setBounds (layout.status);
         removeButton.setBounds (layout.remove.withSizeKeepingCentre (layout.remove.getWidth(), 34));
+        if (pluginMode == PluginMode::clearVoice)
+        {
+            auto controls = layout.strength.withRight (layout.pluginMute.getRight()).reduced (0, 6);
+            auto top = controls.removeFromTop (30);
+            strengthLabel.setBounds (top.removeFromLeft (82));
+            strengthSlider.setBounds (top);
+            auto middle = controls.removeFromTop (30);
+            dereverbLabel.setBounds (middle.removeFromLeft (82));
+            dereverbSlider.setBounds (middle);
+            auto bottom = controls.removeFromTop (28);
+            cpuCombo.setBounds (bottom.removeFromLeft (100));
+            bottom.removeFromLeft (6);
+            latencyCombo.setBounds (bottom.removeFromLeft (130));
+            bottom.removeFromLeft (8);
+            pluginEnableToggle.setBounds (bottom.removeFromLeft (60));
+            editorButton.setBounds (bottom.removeFromLeft (36));
+        }
+        else if (pluginMode == PluginMode::voiceIso)
+        {
+            auto controls = layout.strength.withRight (layout.pluginMute.getRight()).reduced (0, 8);
+            auto top = controls.removeFromTop (30);
+            strengthLabel.setBounds (top.removeFromLeft (82));
+            strengthSlider.setBounds (top);
+            auto bottom = controls.removeFromTop (28);
+            modelHint.setBounds (bottom.removeFromLeft (240));
+            pluginEnableToggle.setBounds (bottom.removeFromLeft (60));
+            editorButton.setBounds (bottom.removeFromLeft (36));
+        }
     }
 
     std::function<void()> onChanged;
@@ -406,23 +463,14 @@ public:
     std::function<void(int, float)> onStrengthChanged;
     std::function<void(int, bool)> onPluginEnabledChanged;
     std::function<void(int, bool)> onPluginMuteChanged;
+    std::function<void(int, const juce::String&, float)> onClearVoiceControl;
 
 private:
-    static void populateChannels (juce::ComboBox& combo,
-                                  const juce::StringArray& names,
-                                  int selectedChannel,
-                                  const juce::String& prefix)
+    void commitMode (const juce::String& control, const juce::ComboBox& combo)
     {
-        const auto requiredCount = juce::jmax (names.size(), selectedChannel + 1);
-        for (int channel = 0; channel < requiredCount; ++channel)
-        {
-            const auto hardwareName = juce::isPositiveAndBelow (channel, names.size())
-                                    ? names[channel]
-                                    : "Unavailable";
-            combo.addItem (prefix + " " + juce::String (channel + 1) + " - " + hardwareName,
-                           channel + 1);
-        }
-        combo.setSelectedId (selectedChannel + 1, juce::dontSendNotification);
+        if (onClearVoiceControl != nullptr)
+            onClearVoiceControl (index, control, combo.getSelectedId() == 2 ? 1.0f : 0.0f);
+        if (onPluginControlCommitted != nullptr) onPluginControlCommitted();
     }
 
     void commit()
@@ -436,8 +484,11 @@ private:
     LaneConfig config;
     juce::Label numberLabel;
     juce::TextEditor nameEditor;
-    juce::ComboBox inputCombo;
-    juce::ComboBox outputCombo;
+    PluginMode pluginMode;
+    juce::Label pluginNameLabel;
+    juce::Slider dereverbSlider;
+    juce::ComboBox cpuCombo, latencyCombo;
+    juce::Label strengthLabel, dereverbLabel, modelHint;
     juce::ToggleButton dryToggle { "BYPASS" };
     juce::Label statusLabel;
     PeakMeter inputMeter;
@@ -466,7 +517,7 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
     addAndMakeVisible (titleLabel);
 
     subtitleLabel.setText (sleepInhibitor.isActive()
-                               ? "Apple Silicon live Audio Unit host  |  SYSTEM SLEEP BLOCKED"
+                               ? "Apple Silicon live Audio Unit host  |  SCREEN & SYSTEM AWAKE"
                                : "Apple Silicon live Audio Unit host  |  SLEEP BLOCK FAILED",
                            juce::dontSendNotification);
     subtitleLabel.setColour (juce::Label::textColourId, sleepInhibitor.isActive() ? mutedText : red);
@@ -488,10 +539,13 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
             "Begin muted, verify every route, and retain an independent hardware or console mute.\n\n"
             "The optional LAN remote has full live-audio control and uses unencrypted HTTP. "
             "Enable it only on a trusted private network; never expose TCP port 8765 to the internet or shared Wi-Fi.\n\n"
-            "While this app is open, it asks macOS to prevent idle system sleep and App Nap. "
-            "The display may still sleep; closing the lid or explicitly choosing Sleep can still interrupt audio.");
+            "While this app is open, it asks macOS to prevent idle system sleep, display sleep and App Nap. "
+            "Closing the lid or explicitly choosing Sleep can still interrupt audio.");
     };
     addAndMakeVisible (aboutButton);
+    settingsButton.onClick = [this] { showSettingsDialog(); };
+    settingsButton.setTooltip ("Choose each lane's plugin and patch inputs / outputs.");
+    addAndMakeVisible (settingsButton);
 
     for (auto* label : { &deviceLabel, &rateLabel, &bufferLabel, &engineLabel, &outputSafetyLabel })
     {
@@ -755,6 +809,7 @@ void MainComponent::resized()
     auto area = getLocalBounds().reduced (20);
     auto heading = area.removeFromTop (46);
     aboutButton.setBounds (heading.removeFromRight (compact ? 120 : 150).reduced (4, 7));
+    settingsButton.setBounds (heading.removeFromRight (100).reduced (4, 7));
     titleLabel.setBounds (heading.removeFromLeft (compact ? 250 : 360));
     subtitleLabel.setBounds (heading);
     area.removeFromTop (10);
@@ -818,11 +873,17 @@ void MainComponent::resized()
     area.removeFromTop (4);
     laneViewport.setBounds (area);
 
-    const auto rowHeight = 62;
-    laneContainer.setSize (laneViewport.getMaximumVisibleWidth(), juce::jmax (area.getHeight(), laneRows.size() * rowHeight));
-    laneHeader->setBounds (headerArea.withWidth (laneContainer.getWidth()));
+    auto totalHeight = 0;
     for (int index = 0; index < laneRows.size(); ++index)
-        laneRows[index]->setBounds (0, index * rowHeight, laneContainer.getWidth(), rowHeight - 2);
+    {
+        const auto mode = config.lanes[index].pluginMode;
+        const auto rowHeight = mode == PluginMode::clearVoice ? 106 : mode == PluginMode::voiceIso ? 82 : 62;
+        laneRows[index]->setBounds (0, totalHeight, laneViewport.getMaximumVisibleWidth(), rowHeight - 2);
+        totalHeight += rowHeight;
+    }
+    laneContainer.setSize (laneViewport.getMaximumVisibleWidth(), juce::jmax (area.getHeight(), totalHeight));
+    laneHeader->setBounds (headerArea.withWidth (laneContainer.getWidth()));
+
 }
 
 void MainComponent::timerCallback()
@@ -924,21 +985,26 @@ void MainComponent::rebuildLaneRows()
    #endif
 
     const auto deviceCapacity = juce::jmin (inputNames.size(), outputNames.size());
-    routingHintLabel.setText ("SIGNAL FLOW  |  INPUT -> DE-FEEDBACK -> OUTPUT  |  "
+    laneHeader->setMode (config.pluginMode);
+    routingHintLabel.setText (config.rackModeName().toUpperCase() + "  |  PATCHING IN SETTINGS  |  "
                                   + juce::String (config.lanes.size()) + " LANES  |  "
                                   + juce::String (deviceCapacity) + " DEVICE I/O PAIRS",
                               juce::dontSendNotification);
 
     for (int index = 0; index < config.lanes.size(); ++index)
     {
-        auto* row = laneRows.add (new LaneRow (index, config.lanes[index], inputNames, outputNames));
-        row->setExclusiveRouteChoices (config.lanes);
+        auto* row = laneRows.add (new LaneRow (index, config.lanes[index], config.lanes[index].pluginMode));
         row->onChanged = [this] { applyLanes(); };
         row->onPluginControlCommitted = [this] { saveConfig(); };
         row->onOpenEditor = [this] (int lane) { engine.openPluginEditor (lane); };
         row->onStrengthChanged = [this] (int lane, float strength)
         {
             engine.setLaneStrength (lane, strength);
+        };
+        row->onClearVoiceControl = [this] (int lane, const juce::String& control, float value)
+        {
+            const auto error = engine.setLaneClearVoiceControl (lane, control, value);
+            if (error.isNotEmpty()) showMessage (error, true);
         };
         row->onPluginEnabledChanged = [this] (int lane, bool enabled)
         {
@@ -951,7 +1017,7 @@ void MainComponent::rebuildLaneRows()
            #endif
             showMessage (enabled
                              ? "Lane plugin enabled."
-                             : "Lane plugin suspended; this lane's output is silent.",
+                             : "Lane plugin suspended; this lane passes audio dry.",
                          false);
             updateRuntimeStatus();
             saveConfig();
@@ -1092,6 +1158,7 @@ void MainComponent::addLane()
 
     auto updated = config.lanes;
     updated.add ({ id, "Vocal " + juce::String (id), inputChannel, outputChannel, false, {}, false, {} });
+    updated.getReference (updated.size() - 1).selectPlugin (config.pluginMode);
     applyLaneConfiguration (updated, "Lane added on the next unused input/output pair.");
 }
 
@@ -1172,16 +1239,19 @@ void MainComponent::updateRuntimeStatus()
         LaneStatus status;
         status.pluginEnabled = config.lanes[index].pluginEnabled;
         status.text = ! status.pluginEnabled
-                        ? "INACTIVE - output silent"
+                        ? "PLUGIN OFF - dry pass"
                         : (index == 3 ? "INVALID ROUTE" : (config.lanes[index].dry ? "BYPASSED - dry pass" : "PROCESSED"));
-        status.isDryFallback = config.lanes[index].dry || index == 3;
+        status.isDryFallback = ! status.pluginEnabled || config.lanes[index].dry || index == 3;
         status.editorAvailable = status.pluginEnabled;
         status.strengthAvailable = status.pluginEnabled;
-        status.pluginMuteAvailable = status.pluginEnabled;
-        status.pluginMuted = previewMutedLaneIds.contains (config.lanes[index].id);
+        status.pluginMuteAvailable = status.pluginEnabled && config.lanes[index].pluginMode == PluginMode::deFeedback;
+        status.pluginMuted = status.pluginEnabled && ! config.lanes[index].dry && config.lanes[index].pluginMode == PluginMode::deFeedback && previewMutedLaneIds.contains (config.lanes[index].id);
+        status.dereverbAvailable = status.cpuModeAvailable = status.latencyModeAvailable
+            = status.pluginEnabled && config.lanes[index].pluginMode == PluginMode::clearVoice;
+        status.dereverbNormalized = 0.6f;
         status.strengthNormalized = index == 0 ? 0.53f : (index == 1 ? 0.75f : (index == 2 ? 0.72f : 1.0f));
         status.inputPeak = index == 0 ? 0.55f : 0.25f;
-        status.outputPeak = ! status.pluginEnabled || status.pluginMuted || index == 3 ? 0.0f : 0.35f;
+        status.outputPeak = status.pluginMuted || index == 3 ? 0.0f : ! status.pluginEnabled ? status.inputPeak : 0.35f;
         statuses.add (status);
     }
     const auto engineRunning = previewEngineRunning;
@@ -1280,8 +1350,8 @@ void MainComponent::updateRuntimeStatus()
     else if (inactiveCount > 0)
     {
         alertLabel.setText (juce::String (inactiveCount)
-                                + (inactiveCount == 1 ? " LANE INACTIVE" : " LANES INACTIVE")
-                                + " | OUTPUT SILENT | DE-FEEDBACK DSP SUSPENDED",
+                                + (inactiveCount == 1 ? " PLUGIN OFF" : " PLUGINS OFF")
+                                + " | DRY AUDIO PASSING | PLUGIN DSP SUSPENDED",
                             juce::dontSendNotification);
         alertLabel.setColour (juce::Label::backgroundColourId, juce::Colour (0xff27313a));
         alertLabel.setColour (juce::Label::textColourId, juce::Colour (0xffc7d2da));
@@ -1411,6 +1481,73 @@ void MainComponent::showRemoteAccessDialog()
         false);
 }
 
+void MainComponent::showSettingsDialog()
+{
+   #if ! DEFEEDBACK_UI_PREVIEW
+    config.lanes = engine.captureLanesWithPluginState();
+   #endif
+    auto inputs = engine.getInputChannelNames();
+    auto outputs = engine.getOutputChannelNames();
+   #if DEFEEDBACK_UI_PREVIEW
+    for (int i = 0; i < previewChannelCount; ++i)
+    {
+        inputs.add ("Input " + juce::String (i + 1));
+        outputs.add ("Output " + juce::String (i + 1));
+    }
+   #endif
+    juce::DialogWindow::LaunchOptions options;
+    options.dialogTitle = "Settings - Plugins & Patching";
+    options.dialogBackgroundColour = panel;
+    options.useNativeTitleBar = true;
+    options.resizable = false;
+    options.escapeKeyTriggersCloseButton = true;
+    options.componentToCentreAround = this;
+    options.content.setOwned (new SettingsPanel (config, inputs, outputs,
+        [safe = juce::Component::SafePointer<MainComponent> (this)] (const AppConfig& next)
+        {
+            return safe != nullptr ? safe->applySettings (next) : juce::String ("Host closed.");
+        }));
+    options.launchAsync();
+}
+
+juce::String MainComponent::applySettings (const AppConfig& next)
+{
+    if (next.lanes.isEmpty()) return "At least one lane must remain in the rack.";
+    if (const auto error = validateExclusiveRoutes (next.lanes); error.isNotEmpty()) return error;
+    bool modeChanged = next.pluginMode != config.pluginMode;
+    bool patchChanged = next.lanes.size() != config.lanes.size();
+    for (int i = 0; i < juce::jmin (next.lanes.size(), config.lanes.size()); ++i)
+    {
+        modeChanged = modeChanged || next.lanes[i].pluginMode != config.lanes[i].pluginMode;
+        patchChanged = patchChanged || next.lanes[i].id != config.lanes[i].id
+            || next.lanes[i].inputChannel != config.lanes[i].inputChannel
+            || next.lanes[i].outputChannel != config.lanes[i].outputChannel;
+    }
+    if (! modeChanged && ! patchChanged) return {};
+
+    engine.setEmergencyMuted (true);
+   #if DEFEEDBACK_UI_PREVIEW
+    previewEngineRunning = false;
+    config.pluginMode = next.pluginMode;
+    config.lanes = next.lanes;
+   #else
+    engine.stop();
+    const auto error = engine.setLanes (next.lanes);
+    if (error.isEmpty()) config.pluginMode = next.pluginMode;
+    config.lanes = engine.captureLanesWithPluginState();
+   #endif
+    refreshAllControls();
+    rebuildLaneRows();
+    updateRuntimeStatus();
+    saveConfig();
+   #if ! DEFEEDBACK_UI_PREVIEW
+    if (error.isNotEmpty()) return error;
+   #endif
+    showMessage (config.rackModeName()
+        + " selected. Engine stopped; outputs muted. Review settings, then start the engine.", false);
+    return {};
+}
+
 void MainComponent::updateRemoteControls()
 {
     const auto listening = remoteControlServer.isListening();
@@ -1451,6 +1588,8 @@ void MainComponent::publishRemoteState (const juce::Array<LaneStatus>& statuses,
 {
     auto root = std::make_unique<juce::DynamicObject>();
     root->setProperty ("version", JUCE_APPLICATION_VERSION_STRING);
+    root->setProperty ("pluginMode", config.rackModeId());
+    root->setProperty ("pluginName", config.rackModeName());
     root->setProperty ("engineRunning", engineRunning);
     root->setProperty ("masterMuted", masterMuted);
     root->setProperty ("autoStart", config.autoStart);
@@ -1552,6 +1691,8 @@ void MainComponent::publishRemoteState (const juce::Array<LaneStatus>& statuses,
                           ? statuses[index]
                           : LaneStatus {};
         auto laneObject = std::make_unique<juce::DynamicObject>();
+        laneObject->setProperty ("pluginMode", pluginModeId (lane.pluginMode));
+        laneObject->setProperty ("pluginName", pluginModeName (lane.pluginMode));
         laneObject->setProperty ("id", lane.id);
         laneObject->setProperty ("name", lane.name);
         laneObject->setProperty ("inputChannel", lane.inputChannel);
@@ -1563,16 +1704,23 @@ void MainComponent::publishRemoteState (const juce::Array<LaneStatus>& statuses,
         laneObject->setProperty ("pluginMuteAvailable", status.pluginMuteAvailable);
         laneObject->setProperty ("strength", status.strengthNormalized);
         laneObject->setProperty ("strengthAvailable", status.strengthAvailable);
+        laneObject->setProperty ("dereverb", status.dereverbNormalized);
+        laneObject->setProperty ("dereverbAvailable", status.dereverbAvailable);
+        laneObject->setProperty ("highCpu", status.highCpu);
+        laneObject->setProperty ("lowLatency", status.lowLatency);
+        laneObject->setProperty ("cpuModeAvailable", status.cpuModeAvailable);
+        laneObject->setProperty ("latencyModeAvailable", status.latencyModeAvailable);
+        laneObject->setProperty ("pluginLatencySamples", status.pluginLatencySamples);
         laneObject->setProperty ("inputPeak", status.inputPeak);
         laneObject->setProperty ("outputPeak", status.outputPeak);
 
         auto displayStatus = status.text;
-        if (! status.pluginEnabled)
-            displayStatus = "INACTIVE - OUTPUT SILENT";
-        else if (! engineRunning)
+        if (! engineRunning)
             displayStatus = "ENGINE STOPPED";
         else if (masterMuted)
             displayStatus = "OUTPUT MUTED";
+        else if (! status.pluginEnabled)
+            displayStatus = "PLUGIN OFF - DRY";
         else if (status.pluginMuted)
             displayStatus = "PLUGIN MUTED";
         else if (lane.dry)
@@ -1589,7 +1737,49 @@ void MainComponent::handleRemoteCommand (const juce::var& command)
 {
     const auto type = command.getProperty ("type", {}).toString();
 
-    if (type == "refreshDevices")
+    const auto targetIndex = findLaneIndexById (static_cast<int> (command.getProperty ("id", -1)));
+    if (command.hasProperty ("pluginMode") && type.contains ("Lane")
+        && juce::isPositiveAndBelow (targetIndex, config.lanes.size())
+        && command.getProperty ("pluginMode", {}).toString() != pluginModeId (config.lanes[targetIndex].pluginMode))
+    {
+        showMessage ("Plugin changed on this lane. Stale remote command rejected; refresh the controls.", true);
+        return;
+    }
+
+    if (type == "setPluginMode" || type == "setLanePluginMode")
+    {
+        const auto mode = command.getProperty ("value", {}).toString();
+        if (mode != "defeedback" && mode != "clearvoice" && mode != "voiceiso")
+        {
+            showMessage ("Unknown plugin mode was rejected.", true);
+            return;
+        }
+        auto next = config;
+        const auto selected = mode == "voiceiso" ? PluginMode::voiceIso
+                            : mode == "clearvoice" ? PluginMode::clearVoice : PluginMode::deFeedback;
+        if (type == "setLanePluginMode")
+        {
+            if (! juce::isPositiveAndBelow (targetIndex, next.lanes.size()))
+            {
+                showMessage ("That lane no longer exists.", true);
+                return;
+            }
+            next.lanes.getReference (targetIndex).selectPlugin (selected);
+        }
+        else next.switchPluginMode (selected);
+        const auto error = applySettings (next);
+        if (error.isNotEmpty()) showMessage (error, true);
+    }
+    else if (type == "setLaneClearVoiceControl")
+    {
+        const auto index = findLaneIndexById (static_cast<int> (command.getProperty ("id", -1)));
+        const auto error = engine.setLaneClearVoiceControl (index,
+            command.getProperty ("control", {}).toString(),
+            static_cast<float> (command.getProperty ("value", -1.0)));
+        if (error.isNotEmpty()) showMessage (error, true);
+        else if (static_cast<bool> (command.getProperty ("commit", true))) saveConfig();
+    }
+    else if (type == "refreshDevices")
     {
        #if ! DEFEEDBACK_UI_PREVIEW
         engine.refreshDeviceList();
@@ -1736,7 +1926,14 @@ void MainComponent::handleRemoteCommand (const juce::var& command)
         const auto processingChanged = lane.inputChannel != previous.inputChannel
                                     || lane.outputChannel != previous.outputChannel
                                     || lane.dry != previous.dry;
-        if (processingChanged)
+        if (lane.inputChannel != previous.inputChannel || lane.outputChannel != previous.outputChannel)
+        {
+            auto next = config;
+            next.lanes = updated;
+            const auto error = applySettings (next);
+            if (error.isNotEmpty()) showMessage (error, true);
+        }
+        else if (processingChanged)
         {
             applyLaneConfiguration (updated, "Lane routing updated remotely.");
         }
@@ -1779,7 +1976,7 @@ void MainComponent::handleRemoteCommand (const juce::var& command)
        #endif
         showMessage (enabled
                          ? "Lane plugin enabled remotely."
-                         : "Lane plugin suspended remotely; this lane's output is silent.",
+                         : "Lane plugin suspended remotely; this lane passes audio dry.",
                      false);
         updateRuntimeStatus();
         saveConfig();

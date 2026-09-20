@@ -12,7 +12,7 @@ if(NOT DEFINED CMAKE_OSX_ARCHITECTURES OR CMAKE_OSX_ARCHITECTURES STREQUAL "")
     set(CMAKE_OSX_ARCHITECTURES arm64 CACHE STRING "Apple Silicon only" FORCE)
 endif()
 
-project(DeFeedbackLive VERSION 0.7.0 LANGUAGES C CXX OBJC OBJCXX)
+project(DeFeedbackLive VERSION 0.10.0 LANGUAGES C CXX OBJC OBJCXX)
 
 if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS DEFEEDBACK_MINIMUM_MACOS_VERSION)
     message(FATAL_ERROR
@@ -24,6 +24,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(DEFEEDBACK_BUILD_TESTS "Build the configuration test suite" ON)
 option(DEFEEDBACK_QA_BUILD "Use a separate bundle identity for side-by-side UI QA" OFF)
+option(DEFEEDBACK_BUILD_PLUGIN_TESTS "Build offline tests using separately installed Audio Units" OFF)
 
 set(DEFEEDBACK_PRODUCT_NAME "DeFeedback Live")
 set(DEFEEDBACK_BUNDLE_ID "au.com.rjstudiosaustralia.defeedback-live")
@@ -33,6 +34,18 @@ if(DEFEEDBACK_QA_BUILD)
 endif()
 
 add_subdirectory(external/JUCE)
+
+if(DEFEEDBACK_BUILD_PLUGIN_TESTS)
+    juce_add_console_app(DeFeedbackPluginTests PRODUCT_NAME "DeFeedback Plugin Tests")
+    target_sources(DeFeedbackPluginTests PRIVATE
+        Tests/AudioEngineIntegrationTests.cpp Source/AudioEngine.cpp Source/AppConfig.cpp
+        Source/PluginRegistration.mm Source/PluginWindow.cpp Source/MeterProcessor.cpp)
+    target_compile_definitions(DeFeedbackPluginTests PRIVATE
+        JUCE_PLUGINHOST_AU=1 JUCE_PLUGINHOST_VST3=0 JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0
+        JUCE_MODAL_LOOPS_PERMITTED=1)
+    target_link_libraries(DeFeedbackPluginTests PRIVATE juce::juce_audio_utils
+        juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+endif()
 
 juce_add_gui_app(DeFeedbackLive
     VERSION ${PROJECT_VERSION}

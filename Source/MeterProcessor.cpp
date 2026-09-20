@@ -4,19 +4,21 @@ namespace defeedback
 {
 MeterProcessor::MeterProcessor (std::atomic<bool>* muteFlag,
                                 bool measureAfterMute,
-                                std::atomic<bool>* laneMute)
+                                std::atomic<bool>* dryPass)
     : AudioProcessor (BusesProperties()
-                          .withInput ("Input", juce::AudioChannelSet::mono(), true)
+                          .withInput ("Input", dryPass != nullptr ? juce::AudioChannelSet::stereo()
+                                                                 : juce::AudioChannelSet::mono(), true)
                           .withOutput ("Output", juce::AudioChannelSet::mono(), true)),
       outputMute (muteFlag),
-      perLaneMute (laneMute),
+      perLaneDry (dryPass),
       measureAfterGate (measureAfterMute)
 {
 }
 
 bool MeterProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
-    return layouts.getMainInputChannelSet() == juce::AudioChannelSet::mono()
+    return layouts.getMainInputChannelSet() == (perLaneDry != nullptr ? juce::AudioChannelSet::stereo()
+                                                                     : juce::AudioChannelSet::mono())
         && layouts.getMainOutputChannelSet() == juce::AudioChannelSet::mono();
 }
 
@@ -36,11 +38,12 @@ void MeterProcessor::updatePeak (const juce::AudioBuffer<Sample>& buffer)
 
 void MeterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
+    if (perLaneDry != nullptr && perLaneDry->load (std::memory_order_acquire))
+        buffer.copyFrom (0, 0, buffer, 1, 0, buffer.getNumSamples());
     if (! measureAfterGate)
         updatePeak (buffer);
 
-    if ((outputMute != nullptr && outputMute->load (std::memory_order_relaxed))
-        || (perLaneMute != nullptr && perLaneMute->load (std::memory_order_relaxed)))
+    if (outputMute != nullptr && outputMute->load (std::memory_order_relaxed))
         buffer.clear();
 
     if (measureAfterGate)
@@ -49,11 +52,12 @@ void MeterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
 
 void MeterProcessor::processBlock (juce::AudioBuffer<double>& buffer, juce::MidiBuffer&)
 {
+    if (perLaneDry != nullptr && perLaneDry->load (std::memory_order_acquire))
+        buffer.copyFrom (0, 0, buffer, 1, 0, buffer.getNumSamples());
     if (! measureAfterGate)
         updatePeak (buffer);
 
-    if ((outputMute != nullptr && outputMute->load (std::memory_order_relaxed))
-        || (perLaneMute != nullptr && perLaneMute->load (std::memory_order_relaxed)))
+    if (outputMute != nullptr && outputMute->load (std::memory_order_relaxed))
         buffer.clear();
 
     if (measureAfterGate)

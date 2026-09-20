@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.10.0 — 2026-09-20
+
+- Added per-lane De-Feedback, Clear Voice Live and VoiceISO selection in Settings, with adaptive rack controls and Apply to all lanes.
+- Preserved names/routes while switching plugins; saved independent plugin state and editor layouts per lane with migration from legacy racks.
+- Updated browser and Companion controls for mixed racks, per-lane plugin identity and stale-command rejection.
+- Applied sample-rate restrictions across the full rack and included graph latency in the estimate.
+- Prevented display sleep as well as idle system sleep and App Nap for the lifetime of the app.
+- Added mixed-plugin configuration, real-AU, remote and Companion checks.
+
+## 0.9.0 — 2026-09-15
+
+- Added VoiceISO mode using its exact installed AU identity, Strength 0–120%, native Full/Lite editor access, bypass status, and independent saved rack.
+- Migrated settings to three isolated state banks while retaining format 6 De-Feedback/Clear Voice sessions.
+- Changed plugin OFF in every mode to suspend DSP and pass dry audio. BYPASS also passes dry; master mute and engine stop still silence outputs.
+- Kept OFF/ON transitions on the same plugin instance, with dry/processed latency alignment and live output metering.
+- Added browser and Companion VoiceISO mode controls plus a dedicated Companion Strength action on the 0–120% scale.
+- Added real-AU tests for three-mode restoration and dry pass across OFF, BYPASS, native bypass, latency compensation and master mute.
+
+## 0.8.0 — 2026-09-15
+
+- Added Settings with De-Feedback / Clear Voice Live 1.1 mode selection and staged native input/output patching.
+- Moved patch controls out of native and browser lane strips to make room for processing controls.
+- Kept separate saved racks, plugin state, parameter snapshots and editor layouts per mode, with safe legacy migration.
+- Added Clear Voice Strength/Dereverb (0–10), LOW/HIGH CPU, ZERO/LOW latency, supported-rate checks and graph-delay reporting.
+- Made mode and patch changes stop the engine and mute outputs; CPU/latency changes require a stopped engine.
+- Added browser/Companion mode and Clear Voice controls with mode-aware stale-lane-command rejection.
+- Added opt-in memory-only integration tests against the installed AUs.
+
 ## 0.7.0 — 2026-09-06
 
 - Added custom LAN access codes between 4 and 64 characters and retained one-click random code generation.

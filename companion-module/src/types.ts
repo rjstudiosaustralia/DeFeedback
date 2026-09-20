@@ -1,4 +1,15 @@
+export type PluginMode = 'defeedback' | 'clearvoice' | 'voiceiso'
+
 export type RemoteLane = {
+	pluginMode?: PluginMode
+	pluginName?: string
+	dereverb?: number
+	dereverbAvailable?: boolean
+	highCpu?: boolean
+	lowLatency?: boolean
+	cpuModeAvailable?: boolean
+	latencyModeAvailable?: boolean
+	pluginLatencySamples?: number
 	id: number
 	name: string
 	inputChannel: number
@@ -16,6 +27,8 @@ export type RemoteLane = {
 }
 
 export type RemoteState = {
+	pluginMode?: PluginMode | 'mixed'
+	pluginName?: string
 	version: string
 	engineRunning: boolean
 	masterMuted: boolean

@@ -1,6 +1,7 @@
 #include "AudioEngine.h"
 
 #include "PluginRegistration.h"
+#include "ModeParameters.h"
 
 #include <set>
 
@@ -43,6 +44,7 @@ AudioEngine::~AudioEngine()
 juce::String AudioEngine::initialise (const AppConfig& config)
 {
     lanes = config.lanes;
+    pluginMode = config.pluginMode;
     locatePlugin();
 
     juce::AudioDeviceManager::AudioDeviceSetup preferred;
@@ -79,6 +81,9 @@ juce::String AudioEngine::start()
     if (deviceManager.getCurrentAudioDevice() == nullptr)
         return "No Core Audio device is open.";
 
+    if (! supportsSampleRate (lanes, getCurrentSampleRate()))
+        return "Clear Voice Live requires 48, 96 or 192 kHz. Select a supported sample rate before starting.";
+
     auto error = rebuildGraph();
     if (error.isNotEmpty())
         return error;
@@ -114,40 +119,69 @@ void AudioEngine::setEmergencyMuted (bool shouldMute)
 
 juce::String AudioEngine::setLanes (const juce::Array<LaneConfig>& newLanes)
 {
-    updateSavedPluginStates();
-    capturePluginWindowStates();
-    auto updated = newLanes;
-
-    // Routing edits originate in the UI, while the freshest opaque AU state lives
-    // in the active instances. Preserve that state by stable lane id when a graph
-    // edit causes the instances to be rebuilt.
-    for (auto& lane : updated)
+    if (newLanes.isEmpty()) return "At least one lane must remain in the rack.";
+    if (const auto error = validateExclusiveRoutes (newLanes); error.isNotEmpty()) return error;
+    for (const auto& lane : newLanes)
     {
         for (const auto& current : lanes)
-        {
+            if (lane.id == current.id && lane.pluginMode != current.pluginMode && running)
+                return "Stop the audio engine before changing a lane's plugin.";
+        if (! plugins.contains (lane.pluginMode)) locatePlugin (lane.pluginMode);
+        // A missing new selection must leave the existing rack intact.
+        for (const auto& current : lanes)
+            if (lane.id == current.id && lane.pluginMode != current.pluginMode
+                && ! plugins[lane.pluginMode].available)
+                return plugins[lane.pluginMode].diagnostic;
+    }
+    const auto wasRunning = running;
+    stop();
+    updateSavedPluginStates (true);
+    capturePluginWindowStates();
+    auto updated = newLanes;
+    for (auto& lane : updated)
+        for (const auto& current : lanes)
             if (lane.id == current.id)
             {
-                lane.pluginStateBase64 = current.pluginStateBase64;
-                lane.editorOpen = current.editorOpen;
-                lane.editorWindowState = current.editorWindowState;
+                auto fresh = current;
+                fresh.selectPlugin (lane.pluginMode);
+                fresh.name = lane.name;
+                fresh.inputChannel = lane.inputChannel;
+                fresh.outputChannel = lane.outputChannel;
+                if (lane.pluginMode == current.pluginMode)
+                {
+                    fresh.dry = lane.dry;
+                    fresh.pluginEnabled = lane.pluginEnabled;
+                }
+                lane = std::move (fresh);
                 break;
             }
-        }
-    }
-
+    // Retire old nodes before changing lane order or plugin identity. Never
+    // capture an old instance's state into a different lane or vendor's state.
+    player.setProcessor (nullptr);
+    closePluginWindows();
+    graph.clear();
+    laneRuntimes.clear();
     lanes = std::move (updated);
-
-    if (lanes.isEmpty())
-        lanes.add ({ 1, "Vocal 1", 0, 0, false, {}, false, {} });
-
+    locatePlugin();
+    running = wasRunning;
     return rebuildGraph();
 }
 
-juce::Array<LaneConfig> AudioEngine::captureLanesWithPluginState()
+juce::Array<LaneConfig> AudioEngine::captureLanesWithPluginState (bool preserveModeControls)
 {
-    updateSavedPluginStates();
+    updateSavedPluginStates (preserveModeControls);
     capturePluginWindowStates();
     return lanes;
+}
+
+juce::String AudioEngine::setPluginMode (PluginMode mode, const juce::Array<LaneConfig>& nextLanes)
+{
+    if (running) return "Stop the audio engine before changing plugin mode.";
+    auto selected = nextLanes;
+    for (auto& lane : selected) lane.selectPlugin (mode);
+    const auto error = setLanes (selected);
+    if (error.isEmpty()) pluginMode = mode;
+    return error;
 }
 
 juce::Array<DeviceChoice> AudioEngine::getDeviceChoices()
@@ -177,7 +211,13 @@ juce::Array<DeviceChoice> AudioEngine::getDeviceChoices()
 juce::Array<double> AudioEngine::getAvailableSampleRates() const
 {
     if (auto* device = deviceManager.getCurrentAudioDevice())
-        return device->getAvailableSampleRates();
+    {
+        auto rates = device->getAvailableSampleRates();
+        for (int index = rates.size(); --index >= 0;)
+            if (! supportsSampleRate (lanes, rates[index]))
+                rates.remove (index);
+        return rates;
+    }
 
     return {};
 }
@@ -239,6 +279,8 @@ juce::String AudioEngine::selectDevice (const DeviceChoice& choice)
 
 juce::String AudioEngine::setSampleRate (double rate)
 {
+    if (! supportsSampleRate (lanes, rate))
+        return "Clear Voice Live requires 48, 96 or 192 kHz.";
     auto setup = deviceManager.getAudioDeviceSetup();
     setup.sampleRate = rate;
 
@@ -304,7 +346,9 @@ int AudioEngine::getCurrentBufferSize() const
 double AudioEngine::getEstimatedRoundTripMilliseconds() const
 {
     if (auto* device = deviceManager.getCurrentAudioDevice())
-        return estimateRoundTripMilliseconds (device->getCurrentSampleRate(),
+        return (device->getCurrentSampleRate() > 0.0
+                    ? 1000.0 * graph.getLatencySamples() / device->getCurrentSampleRate() : 0.0)
+             + estimateRoundTripMilliseconds (device->getCurrentSampleRate(),
                                               device->getCurrentBufferSizeSamples(),
                                               device->getInputLatencyInSamples(),
                                               device->getOutputLatencyInSamples());
@@ -334,18 +378,38 @@ juce::Array<LaneStatus> AudioEngine::getLaneStatuses()
                                  ? lanes[index].pluginEnabled
                                  : true;
         LaneStatus status;
-        status.text = pluginEnabled ? runtime.status : "INACTIVE - output silent";
-        status.isDryFallback = runtime.dryFallback;
+        status.text = pluginEnabled ? runtime.status : "PLUGIN OFF - dry pass";
+        status.isDryFallback = runtime.dryFallback || ! pluginEnabled;
         status.editorAvailable = pluginEnabled && runtime.pluginNode != nullptr;
         status.strengthAvailable = pluginEnabled && runtime.strengthParameter != nullptr;
         status.pluginMuteAvailable = pluginEnabled && runtime.muteParameter != nullptr;
-        status.pluginMuted = runtime.muteParameter != nullptr && runtime.muteParameter->getValue() >= 0.5f;
+        status.pluginMuted = pluginEnabled && ! lanes[index].dry && runtime.muteParameter != nullptr && runtime.muteParameter->getValue() >= 0.5f;
         status.pluginEnabled = pluginEnabled;
         status.strengthNormalized = runtime.strengthParameter != nullptr
                                   ? runtime.strengthParameter->getValue()
                                   : 1.0f;
         status.inputPeak = runtime.inputMeter != nullptr ? runtime.inputMeter->consumePeak() : 0.0f;
         status.outputPeak = runtime.outputMeter != nullptr ? runtime.outputMeter->consumePeak() : 0.0f;
+        status.dereverbAvailable = pluginEnabled && runtime.dereverbParameter != nullptr;
+        status.cpuModeAvailable = pluginEnabled && runtime.cpuParameter != nullptr;
+        status.latencyModeAvailable = pluginEnabled && runtime.latencyParameter != nullptr;
+        status.dereverbNormalized = runtime.dereverbParameter != nullptr ? runtime.dereverbParameter->getValue() : 0.0f;
+        status.highCpu = runtime.cpuParameter != nullptr && runtime.cpuParameter->getValue() >= 0.5f;
+        status.lowLatency = runtime.latencyParameter != nullptr && runtime.latencyParameter->getValue() >= 0.5f;
+        status.pluginLatencySamples = runtime.pluginNode != nullptr
+            ? runtime.pluginNode->getProcessor()->getLatencySamples() : 0;
+        if (lanes[index].pluginMode != PluginMode::deFeedback && pluginEnabled && ! runtime.dryFallback
+            && runtime.strengthParameter != nullptr && status.strengthNormalized <= 0.0f)
+        {
+            status.text = "DRY - Strength is 0";
+            status.isDryFallback = true;
+        }
+        if (lanes[index].pluginMode == PluginMode::voiceIso && pluginEnabled && ! runtime.dryFallback
+            && runtime.bypassParameter != nullptr && runtime.bypassParameter->getValue() >= 0.5f)
+        {
+            status.text = "DRY - plugin bypass";
+            status.isDryFallback = true;
+        }
         result.add (std::move (status));
     }
 
@@ -429,6 +493,28 @@ void AudioEngine::setLanePluginMuted (int laneIndex, bool shouldMute)
     }
 }
 
+juce::String AudioEngine::setLaneClearVoiceControl (int laneIndex, const juce::String& control, float value)
+{
+    if (! juce::isPositiveAndBelow (laneIndex, static_cast<int> (laneRuntimes.size()))
+        || lanes[laneIndex].pluginMode != PluginMode::clearVoice
+        || ! std::isfinite (value) || value < 0.0f || value > 1.0f)
+        return "Clear Voice control is unavailable or its value is outside 0-1.";
+    auto& runtime = laneRuntimes[static_cast<size_t> (laneIndex)];
+    auto* parameter = control == "dereverb" ? runtime.dereverbParameter
+                    : control == "cpu" ? runtime.cpuParameter
+                    : control == "latency" ? runtime.latencyParameter : nullptr;
+    if (parameter == nullptr)
+        return "The installed Clear Voice AU does not expose this control.";
+    if (running && control != "dereverb")
+        return "Stop the engine before changing CPU or latency mode.";
+    parameter->beginChangeGesture();
+    parameter->setValueNotifyingHost (control == "dereverb" ? juce::jlimit (0.0f, 1.0f, value)
+                                                            : (value >= 0.5f ? 1.0f : 0.0f));
+    parameter->endChangeGesture();
+    if (control != "dereverb") sendChangeMessage();
+    return {};
+}
+
 void AudioEngine::setLanePluginEnabled (int laneIndex, bool shouldEnable)
 {
     if (! juce::isPositiveAndBelow (laneIndex, lanes.size())
@@ -442,23 +528,32 @@ void AudioEngine::setLanePluginEnabled (int laneIndex, bool shouldEnable)
 
     lane.pluginEnabled = shouldEnable;
 
-    if (runtime.inactiveOutputMute != nullptr)
-        runtime.inactiveOutputMute->store (! shouldEnable, std::memory_order_release);
-
     if (runtime.pluginNode != nullptr)
     {
         auto* processor = runtime.pluginNode->getProcessor();
         if (! shouldEnable)
         {
-            processor->suspendProcessing (true);
+            // Change routing and suspension together between whole callbacks.
+            // No state serialization or editor work occurs under this lock.
+            {
+                const juce::ScopedLock callbackLock (graph.getCallbackLock());
+                if (runtime.dryOutput != nullptr)
+                    runtime.dryOutput->store (true, std::memory_order_release);
+                processor->suspendProcessing (true);
+            }
             juce::MemoryBlock state;
             processor->getStateInformation (state);
             lane.pluginStateBase64 = state.toBase64Encoding();
         }
         else
         {
+            // Reset while still suspended and dry; release dry only when the
+            // next complete graph callback can run the resumed processor.
             processor->reset();
+            const juce::ScopedLock callbackLock (graph.getCallbackLock());
             processor->suspendProcessing (false);
+            if (runtime.dryOutput != nullptr)
+                runtime.dryOutput->store (false, std::memory_order_release);
         }
 
         if (! shouldEnable)
@@ -478,6 +573,8 @@ void AudioEngine::setLanePluginEnabled (int laneIndex, bool shouldEnable)
             openPluginEditor (laneIndex);
     }
 
+    else if (runtime.dryOutput != nullptr)
+        runtime.dryOutput->store (! shouldEnable, std::memory_order_release);
     sendChangeMessage();
 }
 
@@ -503,35 +600,60 @@ void AudioEngine::handleAsyncUpdate()
 
 void AudioEngine::locatePlugin()
 {
-    pluginAvailable = false;
+    pluginAvailable = true;
     pluginDiagnostic.clear();
+    std::set<PluginMode> selected;
+    for (const auto& lane : lanes) selected.insert (lane.pluginMode);
+    for (const auto mode : selected)
+    {
+        if (! plugins.contains (mode) || ! plugins[mode].available) locatePlugin (mode);
+        pluginAvailable = pluginAvailable && plugins[mode].available;
+        if (pluginDiagnostic.isNotEmpty()) pluginDiagnostic += " | ";
+        pluginDiagnostic += pluginModeName (mode) + ": " + plugins[mode].diagnostic;
+    }
+}
 
-    if (! ensureDeFeedbackAudioUnitRegistered (pluginDiagnostic))
+void AudioEngine::locatePlugin (PluginMode mode)
+{
+    auto& info = plugins[mode];
+    info.available = false;
+    info.diagnostic.clear();
+
+    const auto registered = mode == PluginMode::deFeedback
+        ? ensureDeFeedbackAudioUnitRegistered (info.diagnostic)
+        : mode == PluginMode::voiceIso ? ensureVoiceIsoAudioUnitRegistered (info.diagnostic)
+        : ensureClearVoiceAudioUnitRegistered (info.diagnostic);
+    if (! registered)
         return;
 
     auto* format = pluginFormats.getFormat (0);
     if (format == nullptr)
     {
-        pluginDiagnostic = "Audio Unit hosting format is unavailable.";
+        info.diagnostic = "Audio Unit hosting format is unavailable.";
         return;
     }
 
     juce::OwnedArray<juce::PluginDescription> descriptions;
-    format->findAllTypesForFile (descriptions, deFeedbackIdentifier);
+    const auto identifier = mode == PluginMode::deFeedback ? deFeedbackIdentifier
+        : mode == PluginMode::voiceIso ? juce::String ("AudioUnit:Effects/aufx,Viso,Maze")
+        : juce::String ("AudioUnit:Effects/aufx,Cv11,FabS");
+    format->findAllTypesForFile (descriptions, identifier);
 
     for (const auto* description : descriptions)
     {
-        if (description->name.containsIgnoreCase ("De-Feedback")
-            || description->fileOrIdentifier.containsIgnoreCase ("FbTI"))
+        if (mode == PluginMode::deFeedback
+                ? (description->name.containsIgnoreCase ("De-Feedback")
+                   || description->fileOrIdentifier.containsIgnoreCase ("FbTI"))
+                : description->fileOrIdentifier == identifier)
         {
-            pluginDescription = *description;
-            pluginAvailable = true;
-            pluginDiagnostic += " Native Audio Unit " + description->version + " is ready.";
+            info.description = *description;
+            info.available = true;
+            info.diagnostic += " Native Audio Unit " + description->version + " is ready.";
             return;
         }
     }
 
-    pluginDiagnostic += " The AU could not be described by the host; lanes will pass dry.";
+    info.diagnostic += " The AU could not be described by the host; lanes will pass dry.";
 }
 
 juce::String AudioEngine::rebuildGraph()
@@ -576,7 +698,7 @@ juce::String AudioEngine::rebuildGraph()
     {
         auto& lane = lanes.getReference (laneIndex);
         LaneRuntime runtime;
-        runtime.inactiveOutputMute = std::make_shared<std::atomic<bool>> (! lane.pluginEnabled);
+        runtime.dryOutput = std::make_shared<std::atomic<bool>> (! lane.pluginEnabled);
 
         if (! juce::isPositiveAndBelow (lane.inputChannel, inputSpan)
             || ! juce::isPositiveAndBelow (lane.outputChannel, outputSpan))
@@ -622,10 +744,15 @@ juce::String AudioEngine::rebuildGraph()
         auto sourceNode = inputMeterNode;
         auto sourceChannel = 0;
 
-        if (pluginAvailable)
+        if (! supportsSampleRate (lane.pluginMode, sampleRate))
+        {
+            runtime.status = "DRY - unsupported sample rate";
+            runtime.dryFallback = true;
+        }
+        else if (plugins[lane.pluginMode].available)
         {
             juce::String pluginError;
-            auto instance = pluginFormats.createPluginInstance (pluginDescription,
+            auto instance = pluginFormats.createPluginInstance (plugins[lane.pluginMode].description,
                                                                  sampleRate,
                                                                  blockSize,
                                                                  pluginError);
@@ -639,8 +766,26 @@ juce::String AudioEngine::rebuildGraph()
                         instance->setStateInformation (state.getData(), static_cast<int> (state.getSize()));
                 }
 
+                if (lane.modeParameterState.isNotEmpty())
+                    restoreModeParameters (*instance, lane.pluginMode, lane.modeParameterState);
+
                 runtime.pluginNode = graph.addNode (std::move (instance));
-                bindPluginParameters (runtime);
+                bindPluginParameters (runtime, lane.pluginMode);
+
+                if (lane.pluginMode == PluginMode::clearVoice && lane.pluginStateBase64.isEmpty()
+                    && lane.modeParameterState.isEmpty())
+                {
+                    // Vendor's "Good starting point": LOW CPU, ZERO latency,
+                    // Strength 3, Dereverb 6 (the AU values are normalized).
+                    const auto set = [] (juce::AudioProcessorParameter* parameter, float value)
+                    {
+                        if (parameter != nullptr) parameter->setValueNotifyingHost (value);
+                    };
+                    set (runtime.strengthParameter, 0.3f);
+                    set (runtime.dereverbParameter, 0.6f);
+                    set (runtime.cpuParameter, 0.0f);
+                    set (runtime.latencyParameter, 0.0f);
+                }
 
                 if (runtime.pluginNode != nullptr)
                     runtime.pluginNode->getProcessor()->suspendProcessing (! lane.pluginEnabled);
@@ -680,13 +825,15 @@ juce::String AudioEngine::rebuildGraph()
 
         auto outputMeter = std::make_unique<MeterProcessor> (&emergencyMuted,
                                                               true,
-                                                              runtime.inactiveOutputMute.get());
+                                                              runtime.dryOutput.get());
         runtime.outputMeter = outputMeter.get();
         auto outputMeterNode = graph.addNode (std::move (outputMeter));
 
         const auto connectedToMeter = outputMeterNode != nullptr
                                    && graph.addConnection ({ { sourceNode->nodeID, sourceChannel },
-                                                              { outputMeterNode->nodeID, 0 } });
+                                                              { outputMeterNode->nodeID, 0 } })
+                                    && graph.addConnection ({ { inputMeterNode->nodeID, 0 },
+                                                              { outputMeterNode->nodeID, 1 } });
         const auto connectedToOutput = connectedToMeter
                                     && graph.addConnection ({ { outputMeterNode->nodeID, 0 },
                                                                { outputNode->nodeID, lane.outputChannel } });
@@ -748,7 +895,7 @@ void AudioEngine::reopenSavedPluginWindows()
     }
 }
 
-void AudioEngine::bindPluginParameters (LaneRuntime& runtime)
+void AudioEngine::bindPluginParameters (LaneRuntime& runtime, PluginMode mode)
 {
     if (runtime.pluginNode == nullptr)
         return;
@@ -757,15 +904,33 @@ void AudioEngine::bindPluginParameters (LaneRuntime& runtime)
     {
         const auto name = parameter->getName (128).trim();
 
+        if (mode == PluginMode::voiceIso)
+        {
+            // VoiceISO 1.0.6 publishes Amount (0..1 = 0..120%) and Bypass.
+            // Full/Lite is private editor state; preserve its opaque AU bank.
+            if (name == "Amount") runtime.strengthParameter = parameter;
+            if (name == "Bypass") runtime.bypassParameter = parameter;
+            continue;
+        }
+
         if (runtime.strengthParameter == nullptr && name.containsIgnoreCase ("strength"))
             runtime.strengthParameter = parameter;
 
         if (runtime.muteParameter == nullptr && name.containsIgnoreCase ("mute"))
             runtime.muteParameter = parameter;
+
+        if (mode == PluginMode::clearVoice)
+        {
+            // Exact published AU names: legacy Dereverb Boost and Voice Mode
+            // are different parameters and must never be used for these controls.
+            if (name == "Dereverb") runtime.dereverbParameter = parameter;
+            if (name == "Engine") runtime.cpuParameter = parameter;
+            if (name == "Latency") runtime.latencyParameter = parameter;
+        }
     }
 }
 
-void AudioEngine::updateSavedPluginStates()
+void AudioEngine::updateSavedPluginStates (bool /*preserveModeControls*/)
 {
     const auto count = juce::jmin (lanes.size(), static_cast<int> (laneRuntimes.size()));
 
@@ -778,6 +943,7 @@ void AudioEngine::updateSavedPluginStates()
         juce::MemoryBlock state;
         node->getProcessor()->getStateInformation (state);
         lanes.getReference (index).pluginStateBase64 = state.toBase64Encoding();
+        lanes.getReference (index).modeParameterState = captureModeParameters (*node->getProcessor(), lanes[index].pluginMode);
     }
 }
 

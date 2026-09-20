@@ -62,7 +62,11 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	async runCommand(command: RemoteCommand): Promise<void> {
 		if (!this.api) return
 		try {
-			await this.api.command(command)
+			const lane = typeof command.id === 'number' ? this.getLane(command.id) : undefined
+			await this.api.command({
+				pluginMode: lane?.pluginMode || this.latestState?.pluginMode || 'defeedback',
+				...command,
+			})
 			this.refreshSoon()
 		} catch (error) {
 			this.reportError(error)
@@ -88,7 +92,10 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.latestState = state
 			this.updateStatus(InstanceStatus.Ok)
 
-			const signature = JSON.stringify(state.lanes.map((lane) => [lane.id, lane.name]))
+			const signature = JSON.stringify([
+				state.pluginMode,
+				state.lanes.map((lane) => [lane.id, lane.name, lane.pluginMode]),
+			])
 			if (signature !== this.laneSignature) {
 				this.laneSignature = signature
 				this.updateDefinitions()
