@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.11.1 — Multicore tuning (unreleased)
+## 0.11.1 — Multicore tuning preview 1 (2026-10-25)
 
 - Repaint lane backgrounds only when their state changes, and repaint meters only when the displayed level or colour changes.
 - Add a saved maximum audio-thread count in native and browser Settings, still bounded by available lanes, cores and the device workgroup.
