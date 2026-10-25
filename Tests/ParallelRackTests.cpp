@@ -148,6 +148,38 @@ int main()
             expect (parallel.maximum.load() > 1, "plugin processing overlaps on multiple threads");
         std::cout << blockSize << " samples: maximum simultaneous lanes " << parallel.maximum.load() << '\n';
     }
+    // Exercise the user cap without any particular audio driver or plugin.
+    for (int lanes : { 1, 3, 12 })
+    for (int cap : { 0, 1, 2, 6 })
+    for (double rate : { 44100.0, 96000.0 })
+    {
+        Probe probe;
+        defeedback::ParallelRackProcessor rack;
+        rack.setPlayConfigDetails (lanes, lanes, rate, 128);
+        for (int lane = 0; lane < lanes; ++lane)
+            rack.addLane (makeGraph (0, 1.0f, probe), lane, lane);
+        rack.configure (true, {}, cap);
+        rack.prepareToPlay (rate, 128);
+        const auto threads = rack.getProcessingThreadCount();
+        expect (threads >= 1 && threads <= lanes && (cap == 0 || threads <= cap),
+                "thread cap respects rack size across sample rates");
+        juce::AudioBuffer<float> audio (lanes, 128);
+        juce::MidiBuffer midi;
+        for (int lane = 0; lane < lanes; ++lane)
+            for (int sample = 0; sample < 128; ++sample)
+                audio.setSample (lane, sample, inputSample (lane, sample));
+        rack.processBlock (audio, midi);
+        for (int lane = 0; lane < lanes; ++lane)
+            for (int sample = 0; sample < 128; ++sample)
+            {
+                const auto actual = audio.getSample (lane, sample);
+                const auto expected = inputSample (lane, sample);
+                expect (std::memcmp (&actual, &expected, sizeof (actual)) == 0,
+                        "thread cap preserves every routed sample");
+            }
+        expect (probe.calls.load() == lanes && probe.reentries.load() == 0,
+                "each plugin is processed once at every tested cap");
+    }
     for (int cycle = 0; cycle < 12; ++cycle)
     {
         Probe probe;

@@ -26,6 +26,7 @@ int main()
     original.outputDeviceName = "RME Digiface Dante";
     original.sampleRate = 48000.0;
     original.bufferSize = 32;
+    original.maxProcessingThreads = 6;
     original.remoteControlEnabled = true;
     original.remoteControlPort = 9876;
     original.remoteAccessCodeRequired = false;
@@ -40,6 +41,16 @@ int main()
     expect (restored.inputDeviceName == original.inputDeviceName, "input device round-trip");
     expect (restored.outputDeviceName == original.outputDeviceName, "output device round-trip");
     expect (restored.parallelProcessing, "parallel processing survives save/reload");
+    expect (restored.maxProcessingThreads == 6, "thread limit survives save/reload");
+    {
+        auto settings = original.toXml();
+        settings->removeAttribute ("maxProcessingThreads");
+        expect (AppConfig::fromXml (*settings).maxProcessingThreads == 0, "old settings use automatic thread limit");
+        settings->setAttribute ("maxProcessingThreads", -7);
+        expect (AppConfig::fromXml (*settings).maxProcessingThreads == 0, "negative thread limit is clamped");
+        settings->setAttribute ("maxProcessingThreads", 999);
+        expect (AppConfig::fromXml (*settings).maxProcessingThreads == 64, "excessive thread limit is clamped");
+    }
     expect (restored.bufferSize == 32, "buffer round-trip");
     expect (restored.remoteControlEnabled, "remote enabled round-trip");
     expect (restored.remoteControlPort == 9876, "remote port round-trip");

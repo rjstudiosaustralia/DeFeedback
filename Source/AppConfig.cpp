@@ -159,6 +159,7 @@ std::unique_ptr<juce::XmlElement> AppConfig::toXml() const
     root->setAttribute ("sampleRate", sampleRate);
     root->setAttribute ("bufferSize", bufferSize);
     root->setAttribute ("parallelProcessing", parallelProcessing);
+    root->setAttribute ("maxProcessingThreads", maxProcessingThreads);
     root->setAttribute ("autoStart", autoStart);
     root->setAttribute ("launchAtLogin", launchAtLogin);
     root->setAttribute ("remoteControlEnabled", remoteControlEnabled);
@@ -194,6 +195,7 @@ AppConfig AppConfig::fromXml (const juce::XmlElement& root)
     result.sampleRate = root.getDoubleAttribute ("sampleRate", 48000.0);
     result.bufferSize = juce::jmax (16, root.getIntAttribute ("bufferSize", 64));
     result.parallelProcessing = root.getBoolAttribute ("parallelProcessing", false);
+    result.maxProcessingThreads = juce::jlimit (0, 64, root.getIntAttribute ("maxProcessingThreads", 0));
     result.autoStart = root.getBoolAttribute ("autoStart", true);
     result.launchAtLogin = root.getBoolAttribute ("launchAtLogin", true);
     result.remoteControlEnabled = root.getBoolAttribute ("remoteControlEnabled", false);

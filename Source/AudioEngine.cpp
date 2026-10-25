@@ -46,6 +46,7 @@ juce::String AudioEngine::initialise (const AppConfig& config)
     lanes = config.lanes;
     pluginMode = config.pluginMode;
     parallelProcessing = config.parallelProcessing;
+    maxProcessingThreads = config.maxProcessingThreads;
     locatePlugin();
 
     juce::AudioDeviceManager::AudioDeviceSetup preferred;
@@ -70,7 +71,7 @@ juce::String AudioEngine::initialise (const AppConfig& config)
     if (error = enableAllAvailableChannels(); error.isNotEmpty())
         return "Audio device channels: " + error;
 
-    xRunBaseline = deviceManager.getXRunCount();
+    resetXRunCount();
     return rebuildGraph();
 }
 
@@ -298,10 +299,12 @@ juce::String AudioEngine::setSampleRate (double rate)
     return error;
 }
 
-juce::String AudioEngine::setParallelProcessing (bool enabled)
+juce::String AudioEngine::setParallelProcessing (bool enabled, int maximumThreads)
 {
     if (running) return "Stop the engine before changing parallel processing.";
+    if (maximumThreads < 0 || maximumThreads > 64) return "Thread limit must be between 0 (automatic) and 64.";
     parallelProcessing = enabled;
+    maxProcessingThreads = maximumThreads;
     return {};
 }
 
@@ -369,9 +372,22 @@ int AudioEngine::getXRunCount() const noexcept
     return juce::jmax (0, deviceManager.getXRunCount() - xRunBaseline);
 }
 
+int AudioEngine::getDeviceXRunCount() const noexcept
+{
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+    {
+        const auto count = device->getXRunCount();
+        return count < 0 ? -1 : juce::jmax (0, count - deviceXRunBaseline);
+    }
+    return -1;
+}
+
 void AudioEngine::resetXRunCount()
 {
     xRunBaseline = deviceManager.getXRunCount();
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        deviceXRunBaseline = juce::jmax (0, device->getXRunCount());
+    player.resetMeasurements();
     sendChangeMessage();
 }
 
@@ -697,7 +713,7 @@ juce::String AudioEngine::rebuildGraph()
     const auto blockSize = device->getCurrentBufferSizeSamples();
     graph.setPlayConfigDetails (inputSpan, outputSpan, sampleRate, blockSize);
 
-    graph.configure (parallelProcessing, deviceManager.getDeviceAudioWorkgroup());
+    graph.configure (parallelProcessing, deviceManager.getDeviceAudioWorkgroup(), maxProcessingThreads);
 
     juce::String firstError;
     std::set<int> usedInputs;

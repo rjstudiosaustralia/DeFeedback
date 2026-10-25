@@ -152,6 +152,7 @@ public:
     static int runMixed()
     {
         AppConfig config;
+        config.maxProcessingThreads = 2;
         config.inputDeviceName = config.outputDeviceName = "Offline";
         config.autoStart = config.launchAtLogin = false;
         config.lanes.clear();
@@ -180,7 +181,16 @@ public:
             expect (engine.setSampleRate (44100).isNotEmpty(), "mixed CV rack rejects unsupported rate");
             expect (engine.start().isEmpty(), "start all three plugins together");
             dispatch();
+            expect (engine.getProcessingThreadCount() <= 2, "saved thread cap limits the worker pool");
+            expect (engine.setParallelProcessing (true, 4).isNotEmpty(), "live thread-limit changes are rejected");
+            engine.resetXRunCount();
             pump (engine, 200);
+            expect (engine.getMeasuredBlockCount() == 200 && engine.getPeakCallbackMilliseconds() > 0.0,
+                    "whole-player callback timing measures rendered blocks");
+            expect (engine.getDeviceXRunCount() == -1, "unsupported driver counter remains unavailable");
+            engine.resetXRunCount();
+            expect (engine.getMeasuredBlockCount() == 0 && engine.getPeakCallbackMilliseconds() == 0.0
+                    && engine.getCallbackOverrunCount() == 0, "reset clears timing and late-callback counters");
             auto changed = engine.captureLanesWithPluginState();
             changed.getReference (0).selectPlugin (PluginMode::voiceIso);
             expect (engine.setLanes (changed).isNotEmpty(), "running rack rejects plugin reassignment");

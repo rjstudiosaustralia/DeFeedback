@@ -3,6 +3,7 @@
 #include "AppConfig.h"
 #include "MeterProcessor.h"
 #include "ParallelRackProcessor.h"
+#include "MeasuredAudioPlayer.h"
 #include "PluginWindow.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -75,11 +76,15 @@ public:
     double getCurrentSampleRate() const;
     int getCurrentBufferSize() const;
     double getEstimatedRoundTripMilliseconds() const;
-    juce::String setParallelProcessing (bool);
+    juce::String setParallelProcessing (bool, int maximumThreads = 0);
     int getProcessingThreadCount() const { return graph.getProcessingThreadCount(); }
     bool hasDeviceWorkgroup() const { return graph.hasDeviceWorkgroup(); }
     double getCpuUsage() const { return deviceManager.getCpuUsage(); }
     int getXRunCount() const noexcept;
+    int getDeviceXRunCount() const noexcept;
+    int getCallbackOverrunCount() const { return player.getOverruns(); }
+    int getMeasuredBlockCount() const { return player.getBlocks(); }
+    double getPeakCallbackMilliseconds() const { return player.getPeakMilliseconds(); }
     void resetXRunCount();
 
     bool isPluginAvailable() const noexcept { return pluginAvailable; }
@@ -131,7 +136,7 @@ private:
     // Must outlive the rack, which reads this flag in its final output gate.
     std::atomic<bool> emergencyMuted { false };
     ParallelRackProcessor graph { &emergencyMuted };
-    juce::AudioProcessorPlayer player;
+    MeasuredAudioPlayer player;
     struct PluginInfo
     {
         juce::PluginDescription description;
@@ -146,9 +151,11 @@ private:
     bool running = false;
     PluginMode pluginMode = PluginMode::deFeedback;
     bool parallelProcessing = true;
+    int maxProcessingThreads = 0;
     bool pluginAvailable = false;
     bool suppressDeviceNotifications = false;
     int xRunBaseline = 0;
+    int deviceXRunBaseline = 0;
     juce::String pluginDiagnostic;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioEngine)

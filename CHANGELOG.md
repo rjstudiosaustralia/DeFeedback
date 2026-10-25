@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.11.0 — Multicore preview (unreleased)
+## 0.11.1 — Multicore tuning (unreleased)
+
+- Repaint lane backgrounds only when their state changes, and repaint meters only when the displayed level or colour changes.
+- Add a saved maximum audio-thread count in native and browser Settings, still bounded by available lanes, cores and the device workgroup.
+- Measure the full player callback and show peak duration, block deadline, late callbacks and separate driver XRuns. Unsupported driver counters display N/A.
+- Reset timing measurements alongside XRuns and expose the diagnostics through the authenticated remote API.
+
+## 0.11.0 — Multicore preview 1 (2026-10-25)
 
 - Added independent lane graphs processed by persistent real-time workers, with the Core Audio callback also processing lanes. Workers join the device audio workgroup when available.
 - Added automatic worker sizing, serial mode in native/browser Settings, and a processing-thread count. Existing saved setups remain serial until changed.

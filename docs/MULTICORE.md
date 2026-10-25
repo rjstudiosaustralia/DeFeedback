@@ -1,6 +1,10 @@
-# Multicore preview — 0.11.0
+# Multicore preview — 0.11.1
 
-Select **Settings → Plugin processing → Multicore (automatic)** to process independent lanes concurrently. **Serial (one audio thread)** provides a comparison and fallback. Changing the setting stops the engine and arms master mute; restart and unmute explicitly. Existing settings without the new preference remain serial. Fresh configurations default to multicore.
+Select **Settings → Plugin processing → Multicore** to process independent lanes concurrently. **Serial (one audio thread)** provides a comparison and fallback. The thread-limit selector caps the total audio threads, including the device callback; Automatic retains the existing core/workgroup limit. Changing either setting stops the engine and arms master mute; restart and unmute explicitly. Existing settings without the multicore preference remain serial. Fresh configurations default to multicore, with an automatic thread limit.
+
+Version 0.11.1 avoids full lane redraws on each meter tick. The native display shows average AUDIO load, the PEAK callback duration against its block deadline, LATE callbacks exceeding that deadline, and DEVICE driver-reported XRuns. Peak and counts reset with RESET XRUNS. DEVICE shows N/A when unsupported, not a misleading zero. Driver and callback counts can describe the same incident. The legacy combined XRun value remains available in the remote API for compatibility.
+
+The new callback measurement includes the player buffer copies, plugin rendering and worker completion waits. It excludes device-manager work before and after the player call. It uses two monotonic clock reads and atomic counters per callback, with no logging or allocation on the audio thread. Timing counters persist across stop/start until reset; device/rate/buffer changes reset them.
 
 The separate `DeFeedback Live Multicore.app` uses bundle ID `au.com.rjstudiosaustralia.defeedback-live.multicore`, its own single-instance identity, and its own settings at `~/Library/Application Support/RJ Studios Australia/DeFeedback Live Multicore/settings.xml`. Its defaults disable auto-start and launch at login. The optional remote defaults to port 8767 and remains disabled until selected. This preview does not import or overwrite the released app's settings.
 
@@ -58,7 +62,7 @@ These are callback elapsed times under synthetic input, not whole-process CPU co
 
 Clear Voice-only measurements and mixed racks containing it must be interpreted as including its observed pass-through state. Do not use them as an active Clear Voice capacity estimate. Multicore overhead may exceed the work saved in inexpensive or mostly bypassed racks; serial remains selectable.
 
-## Recorded results
+## Recorded 0.11.0 results
 
 [Raw measurements](benchmarks/2026-10-25-m1-max-multicore.csv). Means combine both runs; P99 is the worse of the two run P99 values. Deadline counts sum both runs (2,400 blocks per mode). Serial and multicore use the same new lane graphs, with workers disabled/enabled respectively. These ratios compare scheduling modes, not the complete 0.10.0 and 0.11.0 applications.
 
@@ -72,3 +76,24 @@ Clear Voice-only measurements and mixed racks containing it must be interpreted 
 | VoiceISO | 128 | 0.472 | 0.077 | 6.12x | 0.496 / 0.090 | 0 / 0 |
 
 The 32-sample deadline is 0.667 ms; eight De-Feedback lanes still exceeded it on some blocks in multicore mode. The 64-sample deadline is 1.333 ms and the 128-sample deadline is 2.667 ms. No measured multicore blocks exceeded those deadlines for De-Feedback or VoiceISO in this run. This does not establish long-duration or hardware reliability.
+
+## 0.11.1 general optimizations and live validation
+
+The redraw optimization applies to every lane type: rows repaint on visual state changes, and meters repaint only when their visible pixel width or colour band changes. No device, machine model, plugin name or channel count is special-cased. Automatic processing still derives its limit from available cores, lanes and the device workgroup. A user-selected cap is optional and saved per installation; this experiment does not change automatic or buffer defaults.
+
+Driver-independent regression tests cover 1, 3 and 12 lanes, caps of Automatic / 1 / 2 / 6, and 44.1 / 96 kHz. They verify cap bounds, exact routed samples and exactly one invocation per plugin. Existing serial/parallel equivalence tests also cover 32, 64, 128 and 512-sample blocks, latency alignment, oversized blocks, mute and teardown/reprepare.
+
+[Live measurement data](benchmarks/2026-10-25-live-tuning.json) records one test setup on 2026-10-25: Waves SoundGrid at 48 kHz, eleven lanes with ten active De-Feedback instances and the final plugin switched off. Each short run warmed up for five seconds, reset its counters, then measured approximately thirty seconds with outputs muted but plugins still processing. State was polled once per second. No sampling profiler ran during these measurements.
+
+| Audio threads | Buffer | Peak callback | Late callbacks | Mean callback load |
+|---:|---:|---:|---:|---:|
+| 8 | 64 | 1.298 ms | 0 | 30.24% |
+| 6 | 64 | 1.316 ms | 0 | 29.35% |
+| 4 | 64 | 1.422 ms | 10 | 32.58% |
+| 2 | 64 | 1.805 ms | 7,368 | 44.66% |
+| 4 | 128 | 1.496 ms | 0 | 34.03% |
+| 6 | 128 | 1.322 ms | 0 | 29.74% |
+
+A separate 120.76-second run with outputs unmuted, eight threads and 64 samples measured 90,736 callbacks, one deadline miss, a 1.922 ms peak and 29.83% mean callback load. The 64-sample deadline is 1.333 ms; the 128-sample deadline is 2.667 ms. SoundGrid's driver XRun counter was unavailable through this API throughout, so these observations cannot certify hardware underrun behavior. These short tests do not establish show readiness or cross-machine performance. There is no controlled before/after measurement of the redraw change, and no percentage speedup is claimed.
+
+The local test setup was returned to Automatic processing and its original 64-sample buffer, routing and plugin states after testing. More headroom at 128 samples on this rig is an observation, not a new default.
