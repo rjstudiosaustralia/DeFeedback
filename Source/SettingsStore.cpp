@@ -9,15 +9,18 @@ namespace defeedback
 SettingsStore::SettingsStore()
 {
     const auto library = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
-    settingsFile = library
-                       .getChildFile ("Application Support")
-                       .getChildFile ("RJ Studios Australia")
-                       .getChildFile ("DeFeedback Live")
-                       .getChildFile ("settings.xml");
-    legacySettingsFile = library
-                             .getChildFile ("RJ Studios Australia")
-                             .getChildFile ("DeFeedback Live")
-                             .getChildFile ("settings.xml");
+   #if DEFEEDBACK_MULTICORE_PREVIEW
+    const auto applicationFolder = "DeFeedback Live Multicore";
+   #else
+    const auto applicationFolder = "DeFeedback Live";
+   #endif
+    settingsFile = library.getChildFile ("Application Support")
+                          .getChildFile ("RJ Studios Australia")
+                          .getChildFile (applicationFolder)
+                          .getChildFile ("settings.xml");
+    legacySettingsFile = library.getChildFile ("RJ Studios Australia")
+                                .getChildFile (applicationFolder)
+                                .getChildFile ("settings.xml");
 }
 
 AppConfig SettingsStore::load() const
@@ -25,10 +28,17 @@ AppConfig SettingsStore::load() const
     if (auto xml = juce::XmlDocument::parse (settingsFile))
         return AppConfig::fromXml (*xml);
 
+   #if ! DEFEEDBACK_MULTICORE_PREVIEW
     if (auto xml = juce::XmlDocument::parse (legacySettingsFile))
         return AppConfig::fromXml (*xml);
 
-    return {};
+   #endif
+    AppConfig defaults;
+   #if DEFEEDBACK_MULTICORE_PREVIEW
+    defaults.autoStart = defaults.launchAtLogin = false;
+    defaults.remoteControlPort = 8767;
+   #endif
+    return defaults;
 }
 
 bool SettingsStore::save (const AppConfig& config, juce::String& error) const

@@ -39,6 +39,7 @@ int main()
     auto restored = AppConfig::fromXml (*original.toXml());
     expect (restored.inputDeviceName == original.inputDeviceName, "input device round-trip");
     expect (restored.outputDeviceName == original.outputDeviceName, "output device round-trip");
+    expect (restored.parallelProcessing, "parallel processing survives save/reload");
     expect (restored.bufferSize == 32, "buffer round-trip");
     expect (restored.remoteControlEnabled, "remote enabled round-trip");
     expect (restored.remoteControlPort == 9876, "remote port round-trip");
@@ -134,6 +135,7 @@ int main()
             "all saved lanes are restored without an application cap");
 
     juce::XmlElement empty ("DEFEEDBACK_LIVE_CONFIG");
+    expect (! AppConfig::fromXml (empty).parallelProcessing, "legacy settings retain serial processing until selected");
     expect (AppConfig::fromXml (empty).lanes.size() == 1, "empty config restores one safe lane");
 
     juce::XmlElement legacy ("DEFEEDBACK_LIVE_CONFIG");

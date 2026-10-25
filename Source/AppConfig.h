@@ -49,6 +49,7 @@ struct AppConfig
     juce::String outputDeviceName;
     double sampleRate = 48000.0;
     int bufferSize = 64;
+    bool parallelProcessing = true;
     bool autoStart = true;
     bool launchAtLogin = true;
     bool remoteControlEnabled = false;

@@ -18,7 +18,7 @@ Core Audio input N
         └─ dry fallback ─── atomic output gate ─ output meter ─ Core Audio output M
 ```
 
-The application has one `juce::AudioDeviceManager`, one `AudioProcessorPlayer`, and one `AudioProcessorGraph`. Every lane receives its own De-Feedback instance plus raw-input and post-gate output meter nodes. Input and output channel assignments are exclusive across lanes; duplicate routing is rejected by both the UI and engine.
+The application has one `juce::AudioDeviceManager`, one `AudioProcessorPlayer`, and one `ParallelRackProcessor`. Each lane owns a mono `AudioProcessorGraph`, an instance of its selected plugin, and raw-input/post-gate output meter nodes. Input and output channel assignments are exclusive across lanes; duplicate routing is rejected by both the UI and engine. A rack-level delay aligns lanes to the longest graph latency, followed by a final master mute gate.
 
 ## Plugin mode extension (0.8)
 
@@ -39,7 +39,7 @@ Normal discovery uses Core Audio registration. If the system component cache is 
 
 ## Real-time constraints
 
-- The global mute is an atomic flag read by each post-plugin meter node.
+- The global mute is an atomic flag read by each post-plugin meter node and again after rack latency alignment.
 - Audio callbacks perform no filesystem access, UI work, logging, or allocation in application code.
 - Peak meters publish through atomics and are consumed by the 10 Hz UI timer.
 - Graph construction, state capture, and plugin editor creation happen on the message thread while callbacks are detached.
@@ -59,7 +59,7 @@ The network thread never calls `AudioEngine`, an Audio Unit instance, JUCE UI ob
 
 The server exists only while the saved remote-enabled setting is on. It binds TCP `8765` on all active interfaces, serves a page embedded in the executable, and loads no remote assets. By default, API access requires the operator's 4–64-character custom/random code. A successful login receives a one-year HttpOnly, SameSite cookie; Companion retains the same cookie in process and re-authenticates from its configured code as required. Changing the code or protection mode rotates the saved random browser secret and invalidates remembered clients. Explicit no-code mode bypasses authentication and is warned as full LAN access. Failed logins are delayed, API responses are not cacheable, and the page uses a restrictive content security policy. The preview is HTTP-only and is intended for an isolated trusted LAN, not internet exposure.
 
-JUCE's `AudioProcessorGraph` currently renders these independent lanes serially in one callback. The application does not impose a fixed lane count; the selected device's exclusive input/output pairs determine how many lanes can be configured. The practical live ceiling remains CPU-, buffer-, plugin-, and driver-dependent. If target hardware cannot meet the required lane count at the required buffer, a future engine revision can prototype fixed worker threads joined to the Core Audio device workgroup. Parallelization must be benchmark-driven because synchronization overhead can be worse at very small buffers.
+In multicore mode, persistent real-time threads and the hardware callback claim independent lanes from an atomic queue and finish within the same block. The callback waits for every dispatched worker before copying outputs. Worker count is bounded by lane count, performance-core count, and the device workgroup recommendation. Workers retain and join the device workgroup on their own thread. Serial mode runs the same lane graphs on the callback alone. Single-lane racks create no worker threads. See [Multicore preview](MULTICORE.md) for synchronization, measurements, and limits.
 
 ## Persistence
 
@@ -83,6 +83,8 @@ No licence credentials or plugin binaries are stored by the host.
 | Operator dry bypass | Lane passes dry and displays an amber warning |
 | Global mute | Plugins keep processing; samples are zeroed immediately before graph output |
 | Device change/disconnect | Callback stops; graph rebuild is scheduled on the message thread |
+| Plugin reports changed latency | Rack output is silenced, master mute is armed, and alignment is rebuilt on the message thread |
+| Worker cannot start | Use the workers that started successfully; fall back to serial if none started |
 | LAN client disconnect or request stall | Audio continues; only browser responses are affected |
 | Invalid/duplicate remote route | Command is rejected; active graph and route remain unchanged |
 | Remote disabled | Listener closes; audio state and remembered-browser secret are unchanged |

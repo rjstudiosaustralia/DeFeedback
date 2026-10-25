@@ -516,9 +516,14 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
     titleLabel.setColour (juce::Label::textColourId, text);
     addAndMakeVisible (titleLabel);
 
-    subtitleLabel.setText (sleepInhibitor.isActive()
-                               ? "Apple Silicon live Audio Unit host  |  SCREEN & SYSTEM AWAKE"
-                               : "Apple Silicon live Audio Unit host  |  SLEEP BLOCK FAILED",
+   #if DEFEEDBACK_MULTICORE_PREVIEW
+    const juce::String hostDescription = "Multicore preview";
+   #else
+    const juce::String hostDescription = "Apple Silicon live Audio Unit host";
+   #endif
+    subtitleLabel.setText (hostDescription + (sleepInhibitor.isActive()
+                               ? "  |  SCREEN & SYSTEM AWAKE"
+                               : "  |  SLEEP BLOCK FAILED"),
                            juce::dontSendNotification);
     subtitleLabel.setColour (juce::Label::textColourId, sleepInhibitor.isActive() ? mutedText : red);
     addAndMakeVisible (subtitleLabel);
@@ -1303,7 +1308,8 @@ void MainComponent::updateRuntimeStatus()
    #else
     metricsLabel.setText ("LATENCY " + juce::String (engine.getEstimatedRoundTripMilliseconds(), 1)
                               + " ms     CPU " + juce::String (engine.getCpuUsage() * 100.0, 1)
-                              + "%     XRUNS " + juce::String (engine.getXRunCount()),
+                              + "%     XRUNS " + juce::String (engine.getXRunCount())
+                              + "     THREADS " + juce::String (engine.getProcessingThreadCount()),
                           juce::dontSendNotification);
    #endif
 
@@ -1514,7 +1520,8 @@ juce::String MainComponent::applySettings (const AppConfig& next)
 {
     if (next.lanes.isEmpty()) return "At least one lane must remain in the rack.";
     if (const auto error = validateExclusiveRoutes (next.lanes); error.isNotEmpty()) return error;
-    bool modeChanged = next.pluginMode != config.pluginMode;
+    bool modeChanged = next.pluginMode != config.pluginMode
+                    || next.parallelProcessing != config.parallelProcessing;
     bool patchChanged = next.lanes.size() != config.lanes.size();
     for (int i = 0; i < juce::jmin (next.lanes.size(), config.lanes.size()); ++i)
     {
@@ -1529,11 +1536,18 @@ juce::String MainComponent::applySettings (const AppConfig& next)
    #if DEFEEDBACK_UI_PREVIEW
     previewEngineRunning = false;
     config.pluginMode = next.pluginMode;
+    config.parallelProcessing = next.parallelProcessing;
     config.lanes = next.lanes;
    #else
     engine.stop();
+    engine.setParallelProcessing (next.parallelProcessing);
     const auto error = engine.setLanes (next.lanes);
-    if (error.isEmpty()) config.pluginMode = next.pluginMode;
+    if (error.isEmpty())
+    {
+        config.pluginMode = next.pluginMode;
+        config.parallelProcessing = next.parallelProcessing;
+    }
+    else engine.setParallelProcessing (config.parallelProcessing);
     config.lanes = engine.captureLanesWithPluginState();
    #endif
     refreshAllControls();
@@ -1587,6 +1601,9 @@ void MainComponent::publishRemoteState (const juce::Array<LaneStatus>& statuses,
                                         bool masterMuted)
 {
     auto root = std::make_unique<juce::DynamicObject>();
+    root->setProperty ("parallelProcessing", config.parallelProcessing);
+    root->setProperty ("processingThreads", engine.getProcessingThreadCount());
+    root->setProperty ("audioWorkgroup", engine.hasDeviceWorkgroup());
     root->setProperty ("version", JUCE_APPLICATION_VERSION_STRING);
     root->setProperty ("pluginMode", config.rackModeId());
     root->setProperty ("pluginName", config.rackModeName());
@@ -1746,7 +1763,14 @@ void MainComponent::handleRemoteCommand (const juce::var& command)
         return;
     }
 
-    if (type == "setPluginMode" || type == "setLanePluginMode")
+    if (type == "setParallelProcessing")
+    {
+        auto next = config;
+        next.parallelProcessing = static_cast<bool> (command.getProperty ("enabled", false));
+        const auto error = applySettings (next);
+        if (error.isNotEmpty()) showMessage (error, true);
+    }
+    else if (type == "setPluginMode" || type == "setLanePluginMode")
     {
         const auto mode = command.getProperty ("value", {}).toString();
         if (mode != "defeedback" && mode != "clearvoice" && mode != "voiceiso")

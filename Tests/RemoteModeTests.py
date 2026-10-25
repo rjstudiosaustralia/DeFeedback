@@ -27,6 +27,17 @@ def command(kind, **values):
 
 request('/api/login', {'code': '12345678'})
 assert 'Isolated UI preview' in state()['pluginDiagnostic'], 'Refusing to test a non-QA host'
+for parallel in (False, True):
+    command('setMasterMuted', muted=False)
+    command('setEngineRunning', running=True)
+    changed = command('setParallelProcessing', enabled=parallel)
+    assert changed['parallelProcessing'] == parallel
+    assert not changed['engineRunning'] and changed['masterMuted']
+    assert changed['processingThreads'] >= 1
+    command('setMasterMuted', muted=False)
+    command('setEngineRunning', running=True)
+    unchanged = command('setParallelProcessing', enabled=parallel)
+    assert unchanged['engineRunning'] and not unchanged['masterMuted']
 for mode in ('voiceiso', 'clearvoice', 'defeedback'):
     start = command('setPluginMode', value=mode)
     for lane in start['lanes']:

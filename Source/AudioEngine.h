@@ -2,6 +2,7 @@
 
 #include "AppConfig.h"
 #include "MeterProcessor.h"
+#include "ParallelRackProcessor.h"
 #include "PluginWindow.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -74,6 +75,9 @@ public:
     double getCurrentSampleRate() const;
     int getCurrentBufferSize() const;
     double getEstimatedRoundTripMilliseconds() const;
+    juce::String setParallelProcessing (bool);
+    int getProcessingThreadCount() const { return graph.getProcessingThreadCount(); }
+    bool hasDeviceWorkgroup() const { return graph.hasDeviceWorkgroup(); }
     double getCpuUsage() const { return deviceManager.getCpuUsage(); }
     int getXRunCount() const noexcept;
     void resetXRunCount();
@@ -124,7 +128,9 @@ private:
 
     juce::AudioDeviceManager deviceManager;
     juce::AudioPluginFormatManager pluginFormats;
-    juce::AudioProcessorGraph graph;
+    // Must outlive the rack, which reads this flag in its final output gate.
+    std::atomic<bool> emergencyMuted { false };
+    ParallelRackProcessor graph { &emergencyMuted };
     juce::AudioProcessorPlayer player;
     struct PluginInfo
     {
@@ -139,7 +145,7 @@ private:
 
     bool running = false;
     PluginMode pluginMode = PluginMode::deFeedback;
-    std::atomic<bool> emergencyMuted { false };
+    bool parallelProcessing = true;
     bool pluginAvailable = false;
     bool suppressDeviceNotifications = false;
     int xRunBaseline = 0;

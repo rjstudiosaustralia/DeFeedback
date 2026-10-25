@@ -45,6 +45,7 @@ juce::String AudioEngine::initialise (const AppConfig& config)
 {
     lanes = config.lanes;
     pluginMode = config.pluginMode;
+    parallelProcessing = config.parallelProcessing;
     locatePlugin();
 
     juce::AudioDeviceManager::AudioDeviceSetup preferred;
@@ -297,6 +298,13 @@ juce::String AudioEngine::setSampleRate (double rate)
     return error;
 }
 
+juce::String AudioEngine::setParallelProcessing (bool enabled)
+{
+    if (running) return "Stop the engine before changing parallel processing.";
+    parallelProcessing = enabled;
+    return {};
+}
+
 juce::String AudioEngine::setBufferSize (int size)
 {
     auto setup = deviceManager.getAudioDeviceSetup();
@@ -369,6 +377,13 @@ void AudioEngine::resetXRunCount()
 
 juce::Array<LaneStatus> AudioEngine::getLaneStatuses()
 {
+    // A plugin can change latency from its editor. Do not emit misaligned
+    // samples while the message thread prepares new delay buffers.
+    if (graph.needsLatencyRebuild())
+    {
+        setEmergencyMuted (true);
+        triggerAsyncUpdate();
+    }
     juce::Array<LaneStatus> result;
 
     for (int index = 0; index < static_cast<int> (laneRuntimes.size()); ++index)
@@ -682,13 +697,7 @@ juce::String AudioEngine::rebuildGraph()
     const auto blockSize = device->getCurrentBufferSizeSamples();
     graph.setPlayConfigDetails (inputSpan, outputSpan, sampleRate, blockSize);
 
-    auto inputNode = graph.addNode (std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor> (
-        juce::AudioProcessorGraph::AudioGraphIOProcessor::audioInputNode));
-    auto outputNode = graph.addNode (std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor> (
-        juce::AudioProcessorGraph::AudioGraphIOProcessor::audioOutputNode));
-
-    if (inputNode == nullptr || outputNode == nullptr)
-        return "Could not create the Core Audio graph I/O nodes.";
+    graph.configure (parallelProcessing, deviceManager.getDeviceAudioWorkgroup());
 
     juce::String firstError;
     std::set<int> usedInputs;
@@ -724,12 +733,20 @@ juce::String AudioEngine::rebuildGraph()
         usedInputs.insert (lane.inputChannel);
         usedOutputs.insert (lane.outputChannel);
 
+        auto monoGraph = std::make_unique<juce::AudioProcessorGraph>();
+        auto& laneGraph = *monoGraph;
+        laneGraph.setPlayConfigDetails (1, 1, sampleRate, blockSize);
+        auto inputNode = laneGraph.addNode (std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor> (
+            juce::AudioProcessorGraph::AudioGraphIOProcessor::audioInputNode));
+        auto outputNode = laneGraph.addNode (std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor> (
+            juce::AudioProcessorGraph::AudioGraphIOProcessor::audioOutputNode));
+
         auto inputMeter = std::make_unique<MeterProcessor>();
         runtime.inputMeter = inputMeter.get();
-        auto inputMeterNode = graph.addNode (std::move (inputMeter));
+        auto inputMeterNode = laneGraph.addNode (std::move (inputMeter));
 
-        if (inputMeterNode == nullptr
-            || ! graph.addConnection ({ { inputNode->nodeID, lane.inputChannel },
+        if (inputNode == nullptr || outputNode == nullptr || inputMeterNode == nullptr
+            || ! laneGraph.addConnection ({ { inputNode->nodeID, 0 },
                                          { inputMeterNode->nodeID, 0 } }))
         {
             runtime.status = "INVALID INPUT";
@@ -769,7 +786,7 @@ juce::String AudioEngine::rebuildGraph()
                 if (lane.modeParameterState.isNotEmpty())
                     restoreModeParameters (*instance, lane.pluginMode, lane.modeParameterState);
 
-                runtime.pluginNode = graph.addNode (std::move (instance));
+                runtime.pluginNode = laneGraph.addNode (std::move (instance));
                 bindPluginParameters (runtime, lane.pluginMode);
 
                 if (lane.pluginMode == PluginMode::clearVoice && lane.pluginStateBase64.isEmpty()
@@ -791,7 +808,7 @@ juce::String AudioEngine::rebuildGraph()
                     runtime.pluginNode->getProcessor()->suspendProcessing (! lane.pluginEnabled);
 
                 const auto connectedToPlugin = runtime.pluginNode != nullptr
-                                            && graph.addConnection ({ { inputMeterNode->nodeID, 0 },
+                                            && laneGraph.addConnection ({ { inputMeterNode->nodeID, 0 },
                                                                        { runtime.pluginNode->nodeID, 0 } });
 
                 if (lane.dry)
@@ -827,16 +844,16 @@ juce::String AudioEngine::rebuildGraph()
                                                               true,
                                                               runtime.dryOutput.get());
         runtime.outputMeter = outputMeter.get();
-        auto outputMeterNode = graph.addNode (std::move (outputMeter));
+        auto outputMeterNode = laneGraph.addNode (std::move (outputMeter));
 
         const auto connectedToMeter = outputMeterNode != nullptr
-                                   && graph.addConnection ({ { sourceNode->nodeID, sourceChannel },
+                                   && laneGraph.addConnection ({ { sourceNode->nodeID, sourceChannel },
                                                               { outputMeterNode->nodeID, 0 } })
-                                    && graph.addConnection ({ { inputMeterNode->nodeID, 0 },
+                                    && laneGraph.addConnection ({ { inputMeterNode->nodeID, 0 },
                                                               { outputMeterNode->nodeID, 1 } });
         const auto connectedToOutput = connectedToMeter
-                                    && graph.addConnection ({ { outputMeterNode->nodeID, 0 },
-                                                               { outputNode->nodeID, lane.outputChannel } });
+                                    && laneGraph.addConnection ({ { outputMeterNode->nodeID, 0 },
+                                                               { outputNode->nodeID, 0 } });
 
         if (! connectedToOutput)
         {
@@ -847,10 +864,10 @@ juce::String AudioEngine::rebuildGraph()
                 firstError = "One or more lane routes could not be connected.";
         }
 
+        laneGraph.removeIllegalConnections();
+        graph.addLane (std::move (monoGraph), lane.inputChannel, lane.outputChannel);
         laneRuntimes.push_back (std::move (runtime));
     }
-
-    graph.removeIllegalConnections();
 
     player.setProcessor (&graph);
 

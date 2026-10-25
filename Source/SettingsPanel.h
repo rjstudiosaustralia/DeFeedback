@@ -15,6 +15,11 @@ public:
         : draft (std::move (current)), inputNames (std::move (inputs)),
           outputNames (std::move (outputs)), onApply (std::move (apply))
     {
+        processingLabel.setText ("PLUGIN PROCESSING", juce::dontSendNotification);
+        processingMode.addItem ("Multicore (automatic)", 1);
+        processingMode.addItem ("Serial (one audio thread)", 2);
+        processingMode.setSelectedId (draft.parallelProcessing ? 1 : 2, juce::dontSendNotification);
+        processingMode.setTooltip ("Parallel lanes share real-time audio workers. Serial can be faster for a small rack or very small buffers. Changing this stops and mutes audio.");
         modeLabel.setText ("PLUGIN FOR ALL LANES", juce::dontSendNotification);
         populatePlugins (allPlugins);
         allPlugins.setSelectedId (static_cast<int> (draft.pluginMode) + 1, juce::dontSendNotification);
@@ -36,6 +41,7 @@ public:
         applyButton.onClick = [this]
         {
             commitPatches();
+            draft.parallelProcessing = processingMode.getSelectedId() == 1;
             const auto validation = validateExclusiveRoutes (draft.lanes);
             const auto result = validation.isNotEmpty() ? validation : onApply (draft);
             if (result.isEmpty()) close();
@@ -44,11 +50,11 @@ public:
         cancelButton.onClick = [this] { close(); };
         error.setColour (juce::Label::textColourId, juce::Colour (0xffffb454));
         for (auto* component : std::initializer_list<juce::Component*> {
-                 &modeLabel, &allPlugins, &applyAllButton, &info, &header, &pluginHeader, &inputHeader,
+                 &processingLabel, &processingMode, &modeLabel, &allPlugins, &applyAllButton, &info, &header, &pluginHeader, &inputHeader,
                  &outputHeader, &viewport, &applyButton, &cancelButton, &error })
             addAndMakeVisible (component);
         rebuildPatches();
-        setSize (900, 570);
+        setSize (900, 640);
     }
 
     ~SettingsPanel() override { viewport.setViewedComponent (nullptr, false); }
@@ -56,6 +62,9 @@ public:
     void resized() override
     {
         auto area = getLocalBounds().reduced (18);
+        processingLabel.setBounds (area.removeFromTop (22));
+        processingMode.setBounds (area.removeFromTop (34).removeFromLeft (360));
+        area.removeFromTop (12);
         modeLabel.setBounds (area.removeFromTop (22));
         auto modes = area.removeFromTop (34);
         allPlugins.setBounds (modes.removeFromLeft (260));
@@ -147,6 +156,8 @@ private:
     AppConfig draft;
     juce::StringArray inputNames, outputNames;
     Apply onApply;
+    juce::Label processingLabel;
+    juce::ComboBox processingMode;
     juce::Label modeLabel, info, header, pluginHeader, inputHeader, outputHeader, error;
     juce::ComboBox allPlugins;
     juce::TextButton applyAllButton { "APPLY TO ALL LANES" };

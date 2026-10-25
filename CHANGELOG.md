@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.0 — Multicore preview (unreleased)
+
+- Added independent lane graphs processed by persistent real-time workers, with the Core Audio callback also processing lanes. Workers join the device audio workgroup when available.
+- Added automatic worker sizing, serial mode in native/browser Settings, and a processing-thread count. Existing saved setups remain serial until changed.
+- Preserved latency alignment across lanes without adding a block of latency, with master mute after alignment and a muted rebuild when a plugin changes latency.
+- Added a separate Multicore preview bundle with independent settings and auto-start disabled by default.
+- Added deterministic parallel/serial audio comparisons, lifecycle checks and an offline benchmark using installed plugins.
+
 ## 0.10.0 — 2026-09-20
 
 - Added per-lane De-Feedback, Clear Voice Live and VoiceISO selection in Settings, with adaptive rack controls and Apply to all lanes.
