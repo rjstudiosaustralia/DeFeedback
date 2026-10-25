@@ -70,9 +70,89 @@ public:
 class AudioEngineIntegrationTest
 {
 public:
+    static int runParallelBenchmark()
+    {
+        class CallbackRunner final : public juce::Thread
+        {
+        public:
+            CallbackRunner (std::function<void()> f) : Thread ("Benchmark audio callback"), function (std::move (f)) {}
+            void run() override { function(); }
+            std::function<void()> function;
+        };
+        std::cout << "rack,lanes,buffer,parallel,threads,mean_ms,p99_ms,max_ms,over_budget,blocks" << std::endl;
+        const PluginMode modes[] { PluginMode::clearVoice, PluginMode::deFeedback, PluginMode::voiceIso };
+        for (int rack = 0; rack < 4; ++rack)
+        {
+            AudioEngine engine;
+            engine.deviceManager.addAudioDeviceType (std::make_unique<MemoryDeviceType>());
+            AppConfig config;
+            config.inputDeviceName = config.outputDeviceName = "Offline";
+            config.autoStart = config.launchAtLogin = false;
+            config.lanes.clear();
+            for (int lane = 0; lane < 8; ++lane)
+            {
+                LaneConfig item;
+                item.id = lane + 1;
+                item.inputChannel = item.outputChannel = lane;
+                item.selectPlugin (modes[rack == 3 ? lane % 3 : rack]);
+                config.lanes.add (item);
+            }
+            expect (engine.initialise (config).isEmpty(), "initialise benchmark rack");
+            dispatch();
+            for (const auto& status : engine.getLaneStatuses())
+                if (! status.strengthAvailable) { expect (false, "benchmark requires loaded plugins"); return 1; }
+            for (int blockSize : { 64, 128, 32 })
+                for (bool parallel : { false, true, true, false })
+                {
+                    expect (engine.setParallelProcessing (parallel).isEmpty(), "select benchmark processing mode");
+                    expect (engine.setBufferSize (blockSize).isEmpty(), "select benchmark buffer");
+                    expect (engine.start().isEmpty(), "start benchmark rack");
+                    dispatch();
+                    auto* device = dynamic_cast<MemoryDevice*> (engine.deviceManager.getCurrentAudioDevice());
+                    juce::AudioBuffer<float> input (16, blockSize), output (16, blockSize);
+                    juce::Random random (42);
+                    for (int c = 0; c < 16; ++c)
+                        for (int i = 0; i < blockSize; ++i)
+                            input.setSample (c, i, (random.nextFloat() - 0.5f) * 0.05f);
+                    std::vector<double> timings (1200);
+                    const auto callback = [&]
+                    {
+                        device->callback->audioDeviceIOCallbackWithContext (input.getArrayOfReadPointers(), 16,
+                            output.getArrayOfWritePointers(), 16, blockSize, {});
+                    };
+                    CallbackRunner runner ([&]
+                    {
+                        for (int i = 0; i < 800; ++i) { callback(); juce::Thread::sleep (1); }
+                        for (auto& time : timings)
+                        {
+                            const auto before = juce::Time::getMillisecondCounterHiRes();
+                            callback();
+                            time = juce::Time::getMillisecondCounterHiRes() - before;
+                        }
+                    });
+                    if (! runner.startRealtimeThread (juce::Thread::RealtimeOptions{}.withApproximateAudioProcessingTime (blockSize, 48000)))
+                    { expect (false, "benchmark callback real-time priority"); engine.stop(); return 1; }
+                    runner.waitForThreadToExit (-1);
+                    expect (! engine.graph.needsLatencyRebuild(), "benchmark latency remains stable");
+                    expect (! engine.isEmergencyMuted(), "benchmark master output is unmuted");
+                    std::sort (timings.begin(), timings.end());
+                    const auto mean = std::accumulate (timings.begin(), timings.end(), 0.0) / static_cast<double> (timings.size());
+                    const auto deadline = 1000.0 * blockSize / 48000.0;
+                    const auto misses = std::count_if (timings.begin(), timings.end(), [deadline] (double t) { return t > deadline; });
+                    std::cout << (rack == 3 ? juce::String ("mixed") : pluginModeId (modes[rack]))
+                        << ",8," << blockSize << ',' << (parallel ? "yes" : "no") << ','
+                        << engine.getProcessingThreadCount() << ',' << mean << ',' << timings[timings.size() * 99 / 100]
+                        << ',' << timings.back() << ',' << misses << ',' << timings.size() << std::endl;
+                    engine.stop();
+                }
+        }
+        return failures == 0 ? 0 : 1;
+    }
+
     static int runMixed()
     {
         AppConfig config;
+        config.maxProcessingThreads = 2;
         config.inputDeviceName = config.outputDeviceName = "Offline";
         config.autoStart = config.launchAtLogin = false;
         config.lanes.clear();
@@ -101,7 +181,16 @@ public:
             expect (engine.setSampleRate (44100).isNotEmpty(), "mixed CV rack rejects unsupported rate");
             expect (engine.start().isEmpty(), "start all three plugins together");
             dispatch();
+            expect (engine.getProcessingThreadCount() <= 2, "saved thread cap limits the worker pool");
+            expect (engine.setParallelProcessing (true, 4).isNotEmpty(), "live thread-limit changes are rejected");
+            engine.resetXRunCount();
             pump (engine, 200);
+            expect (engine.getMeasuredBlockCount() == 200 && engine.getPeakCallbackMilliseconds() > 0.0,
+                    "whole-player callback timing measures rendered blocks");
+            expect (engine.getDeviceXRunCount() == -1, "unsupported driver counter remains unavailable");
+            engine.resetXRunCount();
+            expect (engine.getMeasuredBlockCount() == 0 && engine.getPeakCallbackMilliseconds() == 0.0
+                    && engine.getCallbackOverrunCount() == 0, "reset clears timing and late-callback counters");
             auto changed = engine.captureLanesWithPluginState();
             changed.getReference (0).selectPlugin (PluginMode::voiceIso);
             expect (engine.setLanes (changed).isNotEmpty(), "running rack rejects plugin reassignment");
@@ -557,6 +646,7 @@ private:
             std::cout << "Noise output/input energy ratio: " << outputEnergy / inputEnergy << std::endl;
             expect (outputEnergy / inputEnergy < 0.95, "plugin reduces noise after model warmup");
         }
+        expect (! engine.graph.needsLatencyRebuild(), "plugin latency remains stable while processing");
         if (benchmark)
         {
             std::sort (timings.begin(), timings.end());
@@ -594,6 +684,8 @@ int main (int argc, char** argv)
         return juce::JUCEApplicationBase::main (argc, const_cast<const char**> (argv));
     }
     juce::ScopedJuceInitialiser_GUI initialiser;
+    if (argc > 1 && juce::String (argv[1]) == "--parallel-benchmark")
+        return defeedback::AudioEngineIntegrationTest::runParallelBenchmark();
     if (argc > 1 && juce::String (argv[1]) == "--mixed")
         return defeedback::AudioEngineIntegrationTest::runMixed();
     if (argc > 1 && juce::String (argv[1]) == "--pass-through")

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.11.1 — Multicore tuning preview 1 (2026-10-25)
+
+- Repaint lane backgrounds only when their state changes, and repaint meters only when the displayed level or colour changes.
+- Add a saved maximum audio-thread count in native and browser Settings, still bounded by available lanes, cores and the device workgroup.
+- Measure the full player callback and show peak duration, block deadline, late callbacks and separate driver XRuns. Unsupported driver counters display N/A.
+- Reset timing measurements alongside XRuns and expose the diagnostics through the authenticated remote API.
+
+## 0.11.0 — Multicore preview 1 (2026-10-25)
+
+- Added independent lane graphs processed by persistent real-time workers, with the Core Audio callback also processing lanes. Workers join the device audio workgroup when available.
+- Added automatic worker sizing, serial mode in native/browser Settings, and a processing-thread count. Existing saved setups remain serial until changed.
+- Preserved latency alignment across lanes without adding a block of latency, with master mute after alignment and a muted rebuild when a plugin changes latency.
+- Added a separate Multicore preview bundle with independent settings and auto-start disabled by default.
+- Added deterministic parallel/serial audio comparisons, lifecycle checks and an offline benchmark using installed plugins.
+
 ## 0.10.0 — 2026-09-20
 
 - Added per-lane De-Feedback, Clear Voice Live and VoiceISO selection in Settings, with adaptive rack controls and Apply to all lanes.

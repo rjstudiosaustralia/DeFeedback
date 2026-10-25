@@ -15,6 +15,18 @@ public:
         : draft (std::move (current)), inputNames (std::move (inputs)),
           outputNames (std::move (outputs)), onApply (std::move (apply))
     {
+        processingLabel.setText ("PLUGIN PROCESSING", juce::dontSendNotification);
+        processingMode.addItem ("Multicore", 1);
+        processingMode.addItem ("Serial (one audio thread)", 2);
+        processingMode.setSelectedId (draft.parallelProcessing ? 1 : 2, juce::dontSendNotification);
+        processingMode.setTooltip ("Parallel lanes share real-time audio workers. Serial can be faster for a small rack or very small buffers. Changing this stops and mutes audio.");
+        threadLimit.addItem ("Automatic thread limit", 1);
+        for (int count = 1; count <= 64; ++count)
+            threadLimit.addItem (juce::String (count) + " audio threads maximum", count + 1);
+        threadLimit.setSelectedId (draft.maxProcessingThreads + 1, juce::dontSendNotification);
+        threadLimit.setEnabled (draft.parallelProcessing);
+        threadLimit.setTooltip ("Includes the device callback. The actual count is also limited by lanes, performance cores and the audio device. Try 4, 6 or 8 when plugins create their own workers.");
+        processingMode.onChange = [this] { threadLimit.setEnabled (processingMode.getSelectedId() == 1); };
         modeLabel.setText ("PLUGIN FOR ALL LANES", juce::dontSendNotification);
         populatePlugins (allPlugins);
         allPlugins.setSelectedId (static_cast<int> (draft.pluginMode) + 1, juce::dontSendNotification);
@@ -25,7 +37,7 @@ public:
             rebuildPatches();
         };
         info.setText ("Choose a plugin for each lane, or apply one plugin to all lanes. Each lane remembers its plugin settings.\n"
-                      "Applying plugin or patch changes stops the engine and mutes all outputs.", juce::dontSendNotification);
+                      "Applying processing, plugin or patch changes stops the engine and mutes all outputs.", juce::dontSendNotification);
         info.setFont (juce::FontOptions (13.0f));
         header.setText ("LANE", juce::dontSendNotification);
         pluginHeader.setText ("PLUGIN", juce::dontSendNotification);
@@ -36,6 +48,8 @@ public:
         applyButton.onClick = [this]
         {
             commitPatches();
+            draft.parallelProcessing = processingMode.getSelectedId() == 1;
+            draft.maxProcessingThreads = threadLimit.getSelectedId() - 1;
             const auto validation = validateExclusiveRoutes (draft.lanes);
             const auto result = validation.isNotEmpty() ? validation : onApply (draft);
             if (result.isEmpty()) close();
@@ -44,11 +58,11 @@ public:
         cancelButton.onClick = [this] { close(); };
         error.setColour (juce::Label::textColourId, juce::Colour (0xffffb454));
         for (auto* component : std::initializer_list<juce::Component*> {
-                 &modeLabel, &allPlugins, &applyAllButton, &info, &header, &pluginHeader, &inputHeader,
+                 &processingLabel, &processingMode, &threadLimit, &modeLabel, &allPlugins, &applyAllButton, &info, &header, &pluginHeader, &inputHeader,
                  &outputHeader, &viewport, &applyButton, &cancelButton, &error })
             addAndMakeVisible (component);
         rebuildPatches();
-        setSize (900, 570);
+        setSize (900, 640);
     }
 
     ~SettingsPanel() override { viewport.setViewedComponent (nullptr, false); }
@@ -56,6 +70,12 @@ public:
     void resized() override
     {
         auto area = getLocalBounds().reduced (18);
+        processingLabel.setBounds (area.removeFromTop (22));
+        auto processing = area.removeFromTop (34);
+        processingMode.setBounds (processing.removeFromLeft (360));
+        processing.removeFromLeft (12);
+        threadLimit.setBounds (processing.removeFromLeft (360));
+        area.removeFromTop (12);
         modeLabel.setBounds (area.removeFromTop (22));
         auto modes = area.removeFromTop (34);
         allPlugins.setBounds (modes.removeFromLeft (260));
@@ -147,6 +167,8 @@ private:
     AppConfig draft;
     juce::StringArray inputNames, outputNames;
     Apply onApply;
+    juce::Label processingLabel;
+    juce::ComboBox processingMode, threadLimit;
     juce::Label modeLabel, info, header, pluginHeader, inputHeader, outputHeader, error;
     juce::ComboBox allPlugins;
     juce::TextButton applyAllButton { "APPLY TO ALL LANES" };

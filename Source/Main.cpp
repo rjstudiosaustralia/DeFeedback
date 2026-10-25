@@ -8,7 +8,7 @@ class MainWindow final : public juce::DocumentWindow
 {
 public:
     explicit MainWindow (bool safeLaunch)
-        : DocumentWindow ("DeFeedback Live",
+        : DocumentWindow (JUCE_APPLICATION_NAME_STRING,
                           juce::Colour (0xff101316),
                           allButtons)
     {
@@ -48,6 +48,8 @@ public:
     {
        #if DEFEEDBACK_UI_PREVIEW
         return "DeFeedback Live QA";
+       #elif DEFEEDBACK_MULTICORE_PREVIEW
+        return "DeFeedback Live Multicore";
        #else
         return "DeFeedback Live";
        #endif

@@ -49,6 +49,8 @@ struct AppConfig
     juce::String outputDeviceName;
     double sampleRate = 48000.0;
     int bufferSize = 64;
+    bool parallelProcessing = true;
+    int maxProcessingThreads = 0; // Total audio threads including the device callback; 0 = automatic.
     bool autoStart = true;
     bool launchAtLogin = true;
     bool remoteControlEnabled = false;

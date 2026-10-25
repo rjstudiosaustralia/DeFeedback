@@ -3,14 +3,16 @@ set -eu
 
 configuration="${1:-Release}"
 build_dir="${2:-build-${configuration}}"
-app="${build_dir}/DeFeedbackLive_artefacts/${configuration}/DeFeedback Live.app"
+product_name="${3:-DeFeedback Live}"
+app="${build_dir}/DeFeedbackLive_artefacts/${configuration}/${product_name}.app"
 
 if [ ! -d "${app}" ]; then
     echo "Missing ${app}; build the Release configuration first." >&2
     exit 1
 fi
 
-binary="${app}/Contents/MacOS/DeFeedback Live"
+executable=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "${app}/Contents/Info.plist")
+binary="${app}/Contents/MacOS/${executable}"
 minimum_macos=$(/usr/bin/vtool -show-build "${binary}" | awk '/minos/{print $2; exit}')
 architectures=$(/usr/bin/lipo -archs "${binary}")
 
@@ -25,8 +27,9 @@ if [ "${architectures}" != "arm64" ]; then
 fi
 
 version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${app}/Contents/Info.plist")
-archive="dist/DeFeedback-Live-${version}-adhoc-arm64.zip"
-temporary_archive="dist/.DeFeedback-Live-${version}-adhoc-arm64.tmp.zip"
+archive_name=$(printf '%s' "${product_name}" | tr ' ' '-')
+archive="dist/${archive_name}-${version}-adhoc-arm64.zip"
+temporary_archive="dist/.${archive_name}-${version}-adhoc-arm64.tmp.zip"
 
 mkdir -p dist
 

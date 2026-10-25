@@ -95,8 +95,13 @@ class PeakMeter final : public juce::Component
 public:
     void setLevel (float newLevel)
     {
-        level = juce::jlimit (0.0f, 1.0f, newLevel);
-        repaint();
+        const auto next = juce::jlimit (0.0f, 1.0f, newLevel);
+        const auto colourBand = [] (float value) { return value > 0.9f ? 2 : value > 0.65f ? 1 : 0; };
+        const auto changed = juce::roundToInt (std::sqrt (next) * static_cast<float> (getWidth()))
+                          != juce::roundToInt (std::sqrt (level) * static_cast<float> (getWidth()))
+                          || colourBand (next) != colourBand (level);
+        level = next;
+        if (changed) repaint();
     }
 
     void paint (juce::Graphics& g) override
@@ -376,7 +381,11 @@ public:
             nextAccent = amber;
         }
 
-        rowAccent = nextAccent;
+        if (rowAccent != nextAccent)
+        {
+            rowAccent = nextAccent;
+            repaint();
+        }
         statusLabel.setText (displayStatus, juce::dontSendNotification);
         statusLabel.setColour (juce::Label::textColourId, rowAccent);
         pluginEnableToggle.setToggleState (status.pluginEnabled, juce::dontSendNotification);
@@ -397,7 +406,6 @@ public:
         statusLabel.setTooltip (status.text + " | Plugin delay: " + juce::String (status.pluginLatencySamples) + " samples");
         inputMeter.setLevel (status.inputPeak);
         outputMeter.setLevel (status.outputPeak);
-        repaint();
     }
 
     void paint (juce::Graphics& g) override
@@ -516,9 +524,14 @@ MainComponent::MainComponent (bool shouldUseSafeLaunch)
     titleLabel.setColour (juce::Label::textColourId, text);
     addAndMakeVisible (titleLabel);
 
-    subtitleLabel.setText (sleepInhibitor.isActive()
-                               ? "Apple Silicon live Audio Unit host  |  SCREEN & SYSTEM AWAKE"
-                               : "Apple Silicon live Audio Unit host  |  SLEEP BLOCK FAILED",
+   #if DEFEEDBACK_MULTICORE_PREVIEW
+    const juce::String hostDescription = "Multicore preview";
+   #else
+    const juce::String hostDescription = "Apple Silicon live Audio Unit host";
+   #endif
+    subtitleLabel.setText (hostDescription + (sleepInhibitor.isActive()
+                               ? "  |  SCREEN & SYSTEM AWAKE"
+                               : "  |  SLEEP BLOCK FAILED"),
                            juce::dontSendNotification);
     subtitleLabel.setColour (juce::Label::textColourId, sleepInhibitor.isActive() ? mutedText : red);
     addAndMakeVisible (subtitleLabel);
@@ -1299,12 +1312,20 @@ void MainComponent::updateRuntimeStatus()
                                masterMuted ? juce::Colour (0xffb33f45) : juce::Colour (0xff672d31));
 
    #if DEFEEDBACK_UI_PREVIEW
-    metricsLabel.setText ("LATENCY 4.0 ms     CPU 54.9%     XRUNS 0", juce::dontSendNotification);
+    metricsLabel.setText ("LATENCY 4.0 ms   AUDIO 54.9%   THREADS 4\nPEAK 0.900/1.333 ms   LATE 0   DEVICE N/A", juce::dontSendNotification);
    #else
+    const auto deadlineMs = engine.getCurrentSampleRate() > 0.0
+        ? 1000.0 * engine.getCurrentBufferSize() / engine.getCurrentSampleRate() : 0.0;
+    const auto deviceErrors = engine.getDeviceXRunCount();
     metricsLabel.setText ("LATENCY " + juce::String (engine.getEstimatedRoundTripMilliseconds(), 1)
-                              + " ms     CPU " + juce::String (engine.getCpuUsage() * 100.0, 1)
-                              + "%     XRUNS " + juce::String (engine.getXRunCount()),
+                              + " ms   AUDIO " + juce::String (engine.getCpuUsage() * 100.0, 1)
+                              + "%   THREADS " + juce::String (engine.getProcessingThreadCount())
+                              + "\nPEAK " + juce::String (engine.getPeakCallbackMilliseconds(), 3)
+                              + "/" + juce::String (deadlineMs, 3) + " ms   LATE "
+                              + juce::String (engine.getCallbackOverrunCount()) + "   DEVICE "
+                              + (deviceErrors < 0 ? juce::String ("N/A") : juce::String (deviceErrors)),
                           juce::dontSendNotification);
+    metricsLabel.setTooltip ("AUDIO: average callback load. PEAK: longest callback / block deadline. LATE: callbacks exceeding that deadline. DEVICE: driver-reported XRuns (N/A if unavailable). Peak and counts are since RESET XRUNS; driver and callback counts may describe the same incident.");
    #endif
 
     if (! engineRunning)
@@ -1514,7 +1535,9 @@ juce::String MainComponent::applySettings (const AppConfig& next)
 {
     if (next.lanes.isEmpty()) return "At least one lane must remain in the rack.";
     if (const auto error = validateExclusiveRoutes (next.lanes); error.isNotEmpty()) return error;
-    bool modeChanged = next.pluginMode != config.pluginMode;
+    bool modeChanged = next.pluginMode != config.pluginMode
+                    || next.parallelProcessing != config.parallelProcessing
+                    || next.maxProcessingThreads != config.maxProcessingThreads;
     bool patchChanged = next.lanes.size() != config.lanes.size();
     for (int i = 0; i < juce::jmin (next.lanes.size(), config.lanes.size()); ++i)
     {
@@ -1529,11 +1552,20 @@ juce::String MainComponent::applySettings (const AppConfig& next)
    #if DEFEEDBACK_UI_PREVIEW
     previewEngineRunning = false;
     config.pluginMode = next.pluginMode;
+    config.parallelProcessing = next.parallelProcessing;
+    config.maxProcessingThreads = next.maxProcessingThreads;
     config.lanes = next.lanes;
    #else
     engine.stop();
+    engine.setParallelProcessing (next.parallelProcessing, next.maxProcessingThreads);
     const auto error = engine.setLanes (next.lanes);
-    if (error.isEmpty()) config.pluginMode = next.pluginMode;
+    if (error.isEmpty())
+    {
+        config.pluginMode = next.pluginMode;
+        config.parallelProcessing = next.parallelProcessing;
+        config.maxProcessingThreads = next.maxProcessingThreads;
+    }
+    else engine.setParallelProcessing (config.parallelProcessing, config.maxProcessingThreads);
     config.lanes = engine.captureLanesWithPluginState();
    #endif
     refreshAllControls();
@@ -1587,6 +1619,14 @@ void MainComponent::publishRemoteState (const juce::Array<LaneStatus>& statuses,
                                         bool masterMuted)
 {
     auto root = std::make_unique<juce::DynamicObject>();
+    root->setProperty ("parallelProcessing", config.parallelProcessing);
+    root->setProperty ("maxProcessingThreads", config.maxProcessingThreads);
+    root->setProperty ("callbackPeakMs", engine.getPeakCallbackMilliseconds());
+    root->setProperty ("callbackOverruns", engine.getCallbackOverrunCount());
+    root->setProperty ("measuredBlocks", engine.getMeasuredBlockCount());
+    root->setProperty ("deviceXruns", engine.getDeviceXRunCount());
+    root->setProperty ("processingThreads", engine.getProcessingThreadCount());
+    root->setProperty ("audioWorkgroup", engine.hasDeviceWorkgroup());
     root->setProperty ("version", JUCE_APPLICATION_VERSION_STRING);
     root->setProperty ("pluginMode", config.rackModeId());
     root->setProperty ("pluginName", config.rackModeName());
@@ -1746,7 +1786,18 @@ void MainComponent::handleRemoteCommand (const juce::var& command)
         return;
     }
 
-    if (type == "setPluginMode" || type == "setLanePluginMode")
+    if (type == "setParallelProcessing")
+    {
+        auto next = config;
+        next.parallelProcessing = static_cast<bool> (command.getProperty ("enabled", false));
+        const auto limit = command.getProperty ("maxThreads", config.maxProcessingThreads);
+        if ((! limit.isInt() && ! limit.isInt64()) || static_cast<juce::int64> (limit) < 0 || static_cast<juce::int64> (limit) > 64)
+        { showMessage ("Invalid audio thread limit.", true); return; }
+        next.maxProcessingThreads = static_cast<int> (limit);
+        const auto error = applySettings (next);
+        if (error.isNotEmpty()) showMessage (error, true);
+    }
+    else if (type == "setPluginMode" || type == "setLanePluginMode")
     {
         const auto mode = command.getProperty ("value", {}).toString();
         if (mode != "defeedback" && mode != "clearvoice" && mode != "voiceiso")

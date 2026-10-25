@@ -27,6 +27,28 @@ def command(kind, **values):
 
 request('/api/login', {'code': '12345678'})
 assert 'Isolated UI preview' in state()['pluginDiagnostic'], 'Refusing to test a non-QA host'
+for parallel in (False, True):
+    command('setMasterMuted', muted=False)
+    command('setEngineRunning', running=True)
+    changed = command('setParallelProcessing', enabled=parallel)
+    assert changed['parallelProcessing'] == parallel
+    assert not changed['engineRunning'] and changed['masterMuted']
+    assert changed['processingThreads'] >= 1
+    command('setMasterMuted', muted=False)
+    command('setEngineRunning', running=True)
+    unchanged = command('setParallelProcessing', enabled=parallel)
+    assert unchanged['engineRunning'] and not unchanged['masterMuted']
+for limit in (4, 6, 8, 0):
+    changed = command('setParallelProcessing', enabled=True, maxThreads=limit)
+    assert changed['maxProcessingThreads'] == limit
+    assert not changed['engineRunning'] and changed['masterMuted']
+    assert 'callbackPeakMs' in changed and 'deviceXruns' in changed
+rejected = command('setParallelProcessing', enabled=True, maxThreads=-1)
+assert rejected['maxProcessingThreads'] == 0 and rejected['messageError']
+rejected = command('setParallelProcessing', enabled=True, maxThreads=65)
+assert rejected['maxProcessingThreads'] == 0 and rejected['messageError']
+rejected = command('setParallelProcessing', enabled=True, maxThreads=4294967296)
+assert rejected['maxProcessingThreads'] == 0 and rejected['messageError']
 for mode in ('voiceiso', 'clearvoice', 'defeedback'):
     start = command('setPluginMode', value=mode)
     for lane in start['lanes']:

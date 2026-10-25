@@ -33,6 +33,8 @@ Version `0.10.0` lets each lane use De-Feedback, Clear Voice Live or VoiceISO, w
 
 See [Plugin modes and patching](docs/PLUGIN_MODES.md) for plugin requirements, controls, persistence and validation.
 
+Development version `0.11.1` adds multicore lane processing, a selectable thread limit, serial comparison mode, and peak/late-callback diagnostics. The separate **DeFeedback Live Multicore** preview uses its own settings and starts with audio stopped. See [Multicore preview](docs/MULTICORE.md) for builds, scheduling details, and measurements; the stable download above remains `0.10.0`.
+
 Current features:
 
 - arm64-only macOS application;

@@ -12,7 +12,7 @@ if(NOT DEFINED CMAKE_OSX_ARCHITECTURES OR CMAKE_OSX_ARCHITECTURES STREQUAL "")
     set(CMAKE_OSX_ARCHITECTURES arm64 CACHE STRING "Apple Silicon only" FORCE)
 endif()
 
-project(DeFeedbackLive VERSION 0.10.0 LANGUAGES C CXX OBJC OBJCXX)
+project(DeFeedbackLive VERSION 0.11.1 LANGUAGES C CXX OBJC OBJCXX)
 
 if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS DEFEEDBACK_MINIMUM_MACOS_VERSION)
     message(FATAL_ERROR
@@ -23,11 +23,16 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(DEFEEDBACK_BUILD_TESTS "Build the configuration test suite" ON)
+option(DEFEEDBACK_MULTICORE_PREVIEW "Build a separate multicore preview app" OFF)
 option(DEFEEDBACK_QA_BUILD "Use a separate bundle identity for side-by-side UI QA" OFF)
 option(DEFEEDBACK_BUILD_PLUGIN_TESTS "Build offline tests using separately installed Audio Units" OFF)
 
 set(DEFEEDBACK_PRODUCT_NAME "DeFeedback Live")
 set(DEFEEDBACK_BUNDLE_ID "au.com.rjstudiosaustralia.defeedback-live")
+if(DEFEEDBACK_MULTICORE_PREVIEW)
+    set(DEFEEDBACK_PRODUCT_NAME "DeFeedback Live Multicore")
+    set(DEFEEDBACK_BUNDLE_ID "au.com.rjstudiosaustralia.defeedback-live.multicore")
+endif()
 if(DEFEEDBACK_QA_BUILD)
     set(DEFEEDBACK_PRODUCT_NAME "DeFeedback Live QA")
     set(DEFEEDBACK_BUNDLE_ID "au.com.rjstudiosaustralia.defeedback-live.qa")
@@ -39,7 +44,7 @@ if(DEFEEDBACK_BUILD_PLUGIN_TESTS)
     juce_add_console_app(DeFeedbackPluginTests PRODUCT_NAME "DeFeedback Plugin Tests")
     target_sources(DeFeedbackPluginTests PRIVATE
         Tests/AudioEngineIntegrationTests.cpp Source/AudioEngine.cpp Source/AppConfig.cpp
-        Source/PluginRegistration.mm Source/PluginWindow.cpp Source/MeterProcessor.cpp)
+        Source/PluginRegistration.mm Source/PluginWindow.cpp Source/MeterProcessor.cpp Source/ParallelRackProcessor.cpp)
     target_compile_definitions(DeFeedbackPluginTests PRIVATE
         JUCE_PLUGINHOST_AU=1 JUCE_PLUGINHOST_VST3=0 JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0
         JUCE_MODAL_LOOPS_PERMITTED=1)
@@ -67,6 +72,7 @@ target_sources(DeFeedbackLive PRIVATE
     Source/Main.cpp
     Source/MainComponent.cpp
     Source/MeterProcessor.cpp
+    Source/ParallelRackProcessor.cpp
     Source/PluginRegistration.mm
     Source/PluginWindow.cpp
     Source/RemoteControlServer.cpp
@@ -74,6 +80,7 @@ target_sources(DeFeedbackLive PRIVATE
     Source/SettingsStore.cpp)
 
 target_compile_definitions(DeFeedbackLive PRIVATE
+    DEFEEDBACK_MULTICORE_PREVIEW=$<BOOL:${DEFEEDBACK_MULTICORE_PREVIEW}>
     DEFEEDBACK_UI_PREVIEW=$<BOOL:${DEFEEDBACK_QA_BUILD}>
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:DeFeedbackLive,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:DeFeedbackLive,JUCE_VERSION>"
@@ -119,4 +126,13 @@ if(DEFEEDBACK_BUILD_TESTS)
         juce::juce_recommended_warning_flags)
 
     add_test(NAME DeFeedbackConfigTests COMMAND DeFeedbackTests)
+
+    juce_add_console_app(DeFeedbackParallelTests PRODUCT_NAME "DeFeedback Parallel Tests")
+    target_sources(DeFeedbackParallelTests PRIVATE
+        Tests/ParallelRackTests.cpp Source/ParallelRackProcessor.cpp)
+    target_compile_definitions(DeFeedbackParallelTests PRIVATE
+        JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0 JUCE_MODAL_LOOPS_PERMITTED=1)
+    target_link_libraries(DeFeedbackParallelTests PRIVATE juce::juce_audio_processors
+        juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+    add_test(NAME DeFeedbackParallelTests COMMAND DeFeedbackParallelTests)
 endif()
